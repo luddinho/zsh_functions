@@ -212,17 +212,44 @@ dns_check() {
 listening_ports() {
   emulate -L zsh
 
+  local -i quiet=1
+  local -a lsof_opts
+
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    echo "Usage: listening_ports"
+    echo "Usage: listening_ports [--quiet|--verbose]"
     echo "Lists listening TCP/UDP sockets with process info (macOS/Linux)."
+    echo "Default is --quiet (suppresses noisy lsof warnings)."
     return 0
   fi
 
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -q|--quiet)
+        quiet=1
+        ;;
+      -v|--verbose)
+        quiet=0
+        ;;
+      *)
+        echo "Unknown option: $1"
+        echo "Usage: listening_ports [--quiet|--verbose]"
+        return 1
+        ;;
+    esac
+    shift
+  done
+
+  if (( quiet == 1 )); then
+    lsof_opts=(-w -nP)
+  else
+    lsof_opts=(-nP)
+  fi
+
   if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -iTCP -sTCP:LISTEN
+    lsof "${lsof_opts[@]}" -iTCP -sTCP:LISTEN
     local tcp_rc=$?
     echo
-    lsof -nP -iUDP
+    lsof "${lsof_opts[@]}" -iUDP
     local udp_rc=$?
 
     if [[ $tcp_rc -ne 0 && $udp_rc -ne 0 ]]; then
@@ -258,17 +285,27 @@ listening_ports() {
 whichport() {
   emulate -L zsh
 
-  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    echo "Usage: whichport <port> [tcp|udp]"
+  local -i quiet=1
+  local -a lsof_opts
+
+  if [[ "$1" == "-h" || "$1" == "--help" || "$1" == "help" ]]; then
+    echo "Usage: whichport <port> [tcp|udp] [--quiet|--verbose]"
     echo "Shows the process bound to a local port (macOS/Linux)."
+    echo "Default is --quiet (suppresses noisy lsof warnings)."
     return 0
   fi
 
   local port="$1"
-  local proto="${2:-tcp}"
+  shift
+  local proto="tcp"
+
+  if [[ -n "$1" && "$1" != -* ]]; then
+    proto="$1"
+    shift
+  fi
 
   if [[ -z "$port" ]]; then
-    echo "Usage: whichport <port> [tcp|udp]"
+    echo "Usage: whichport <port> [tcp|udp] [--quiet|--verbose]"
     return 1
   fi
 
@@ -283,11 +320,34 @@ whichport() {
     return 1
   fi
 
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -q|--quiet)
+        quiet=1
+        ;;
+      -v|--verbose)
+        quiet=0
+        ;;
+      *)
+        echo "Unknown option: $1"
+        echo "Usage: whichport <port> [tcp|udp] [--quiet|--verbose]"
+        return 1
+        ;;
+    esac
+    shift
+  done
+
+  if (( quiet == 1 )); then
+    lsof_opts=(-w -nP)
+  else
+    lsof_opts=(-nP)
+  fi
+
   if command -v lsof >/dev/null 2>&1; then
     if [[ "$proto" == "tcp" ]]; then
-      lsof -nP -iTCP:"$port" -sTCP:LISTEN
+      lsof "${lsof_opts[@]}" -iTCP:"$port" -sTCP:LISTEN
     else
-      lsof -nP -iUDP:"$port"
+      lsof "${lsof_opts[@]}" -iUDP:"$port"
     fi
     local rc=$?
     if [[ $rc -eq 0 ]]; then
