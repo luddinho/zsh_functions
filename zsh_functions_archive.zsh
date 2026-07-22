@@ -111,6 +111,8 @@ arch_create() {
 
     local format="$1"
     local output="$2"
+    local output_archive=""
+    local format_l="${format:l}"
     shift 2
 
     if [[ -z "$format" || -z "$output" || $# -lt 1 ]]; then
@@ -118,29 +120,59 @@ arch_create() {
         return 1
     fi
 
-    case "${format:l}" in
+    output_archive="$output"
+
+    case "$format_l" in
         tar.gz|tgz)
-            tar -czf "$output" "$@"
+            if [[ "$output_archive" != *.tar.gz && "$output_archive" != *.tgz ]]; then
+                output_archive="${output_archive}.tar.gz"
+            fi
             ;;
         tar.xz|txz)
-            tar -cJf "$output" "$@"
+            if [[ "$output_archive" != *.tar.xz && "$output_archive" != *.txz ]]; then
+                output_archive="${output_archive}.tar.xz"
+            fi
             ;;
         tar.bz2|tbz2)
-            tar -cjf "$output" "$@"
+            if [[ "$output_archive" != *.tar.bz2 && "$output_archive" != *.tbz2 ]]; then
+                output_archive="${output_archive}.tar.bz2"
+            fi
+            ;;
+        zip)
+            if [[ "$output_archive" != *.zip ]]; then
+                output_archive="${output_archive}.zip"
+            fi
+            ;;
+        7z)
+            if [[ "$output_archive" != *.7z ]]; then
+                output_archive="${output_archive}.7z"
+            fi
+            ;;
+    esac
+
+    case "$format_l" in
+        tar.gz|tgz)
+            tar -czf "$output_archive" "$@"
+            ;;
+        tar.xz|txz)
+            tar -cJf "$output_archive" "$@"
+            ;;
+        tar.bz2|tbz2)
+            tar -cjf "$output_archive" "$@"
             ;;
         zip)
             if ! command -v zip >/dev/null 2>&1; then
                 echo "zip command not found."
                 return 1
             fi
-            zip -r "$output" "$@"
+            zip -r "$output_archive" "$@"
             ;;
         7z)
             if ! command -v 7z >/dev/null 2>&1; then
                 echo "7z command not found."
                 return 1
             fi
-            7z a "$output" "$@"
+            7z a "$output_archive" "$@"
             ;;
         *)
             echo "Unsupported format: $format"
