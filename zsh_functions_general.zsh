@@ -15,17 +15,46 @@ path() {
 }
 
 
-power_on_hours() {
-  # Read Power_On_Hours for all /dev/sd? devices, convert to years, and print both values
-    for dev in /dev/sd?; do
-        hours=$(smartctl -a -d sat "$dev" | awk '/Power_On_Hours/ {print $NF}')
-        if [[ -n "$hours" && "$hours" =~ ^[0-9]+$ ]]; then
-            years=$(awk "BEGIN {printf \"%.2f\", $hours/24/365}")
-            echo "$dev: $hours Stunden ≈ $years Jahre"
-        else
-            echo "$dev: Value not available"
-        fi
-    done
+disk_power_on_hours() {
+  # Read Power_On_Hours from whole-disk devices and convert the value to years.
+  emulate -L zsh
+
+  local hours years dev
+  local -a devices
+
+  if ! command -v smartctl >/dev/null 2>&1; then
+    echo "disk_power_on_hours: smartctl is not installed."
+    if [[ "$(uname)" == "Darwin" ]]; then
+      echo "Tip (macOS): brew install smartmontools"
+    fi
+    return 1
+  fi
+
+  if [[ "$(uname)" == "Darwin" ]]; then
+    devices=(/dev/disk<->(N))
+  else
+    devices=(/dev/sd[a-z](N))
+  fi
+
+  if (( ${#devices[@]} == 0 )); then
+    echo "disk_power_on_hours: no matching disk devices found."
+    return 1
+  fi
+
+  for dev in "${devices[@]}"; do
+    if [[ "$(uname)" == "Darwin" ]]; then
+      hours=$(smartctl -a "$dev" 2>/dev/null | awk '/Power_On_Hours|Power on Hours/ {print $NF; exit}')
+    else
+      hours=$(smartctl -a -d sat "$dev" 2>/dev/null | awk '/Power_On_Hours|Power on Hours/ {print $NF; exit}')
+    fi
+
+    if [[ -n "$hours" && "$hours" =~ ^[0-9]+$ ]]; then
+      years=$(awk "BEGIN {printf \"%.2f\", $hours/24/365}")
+      echo "$dev: $hours hours ~= $years years"
+    else
+      echo "$dev: Value not available"
+    fi
+  done
 }
 
 
@@ -48,7 +77,7 @@ epoch2date() {
   fi
 }
 
-# Aktuelles Datum zu Epoch
+# Current date to epoch
 date2epoch() {
   date +%s
 }
@@ -86,15 +115,42 @@ whatsize(){
 
 # Restart all running services except ssh, dbus, systemd-logind
 service-restart-all() {
+  emulate -L zsh
+
+  if command -v systemctl >/dev/null 2>&1; then
     systemctl list-units --type=service --state=running --no-legend \
     | awk '{print $1}' \
     | grep -Ev '^(ssh|dbus|systemd-logind)\.service$' \
     | xargs systemctl restart
+    return $?
+  fi
+
+  if command -v launchctl >/dev/null 2>&1; then
+    echo "service-restart-all: bulk service restart is not supported on macOS launchctl."
+    echo "Use launchctl kickstart -k <domain/service> for a specific service."
+    return 1
+  fi
+
+  echo "service-restart-all: no supported service manager found (systemctl/launchctl)."
+  return 1
 }
 
 # List all running services
 service-list-running() {
+  emulate -L zsh
+
+  if command -v systemctl >/dev/null 2>&1; then
     systemctl list-units --type=service --state=running
+    return $?
+  fi
+
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl list | awk 'NR == 1 || $1 != "-"'
+    return $?
+  fi
+
+  echo "service-list-running: no supported service manager found (systemctl/launchctl)."
+  return 1
 }
 
 # Internal usage printer to keep help output consistent.
@@ -433,6 +489,7 @@ calc() {
 # Overview of general helper functions.
 general_help() {
   echo "General helper functions:"
+  printf "  %-36s %s\n" "disk_power_on_hours" "Show disk power-on hours"
   printf "  %-36s %s\n" "extractpath CMD" "Show command resolution"
   printf "  %-36s %s\n" "mkcdtemp [PREFIX]" "Create and enter temporary directory"
   printf "  %-36s %s\n" "backup_file PATH" "Create timestamped backup"
