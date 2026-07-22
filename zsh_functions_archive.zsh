@@ -300,21 +300,59 @@ arch_extract_to() {
     emulate -L zsh
 
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-        _arch_usage "arch_extract_to <archive_file> <target_directory>" "Extracts archive into target directory."
+        _arch_usage "arch_extract_to <archive_file> [target_directory]" "Extracts archive into target directory. Defaults to a sibling folder named after the archive."
         return 0
     fi
 
     local archive="$1"
     local target_dir="$2"
+    local archive_name=""
+    local archive_base=""
+    local archive_parent=""
 
-    if [[ -z "$archive" || -z "$target_dir" ]]; then
-        _arch_usage "arch_extract_to <archive_file> <target_directory>" "Extracts archive into target directory."
+    if [[ -z "$archive" ]]; then
+        _arch_usage "arch_extract_to <archive_file> [target_directory]" "Extracts archive into target directory. Defaults to a sibling folder named after the archive."
         return 1
     fi
+
+    archive=${~archive}
 
     if [[ ! -f "$archive" ]]; then
         echo "Archive not found: $archive"
         return 1
+    fi
+
+    if [[ -z "$target_dir" ]]; then
+        archive_name="${archive:t}"
+        archive_base="$archive_name"
+        archive_parent="${archive:h}"
+
+        case "$archive_name" in
+            *.tar.gz) archive_base="${archive_name%.tar.gz}" ;;
+            *.tar.bz2) archive_base="${archive_name%.tar.bz2}" ;;
+            *.tar.xz) archive_base="${archive_name%.tar.xz}" ;;
+            *.tar.lzma) archive_base="${archive_name%.tar.lzma}" ;;
+            *.tgz) archive_base="${archive_name%.tgz}" ;;
+            *.tbz2) archive_base="${archive_name%.tbz2}" ;;
+            *.txz) archive_base="${archive_name%.txz}" ;;
+            *.tar) archive_base="${archive_name%.tar}" ;;
+            *.zip) archive_base="${archive_name%.zip}" ;;
+            *.7z) archive_base="${archive_name%.7z}" ;;
+            *.rar) archive_base="${archive_name%.rar}" ;;
+            *.gz) archive_base="${archive_name%.gz}" ;;
+            *.bz2) archive_base="${archive_name%.bz2}" ;;
+            *.xz) archive_base="${archive_name%.xz}" ;;
+            *.Z) archive_base="${archive_name%.Z}" ;;
+            *.dmg) archive_base="${archive_name%.dmg}" ;;
+        esac
+
+        if [[ -z "$archive_base" ]]; then
+            archive_base="$archive_name"
+        fi
+
+        target_dir="$archive_parent/$archive_base"
+    else
+        target_dir=${~target_dir}
     fi
 
     mkdir -p "$target_dir" || {
@@ -391,6 +429,6 @@ arch_help() {
     printf "  %-36s %s\n" "arch_create FORMAT OUTPUT INPUT..." "Create archive"
     printf "  %-36s %s\n" "arch_list ARCHIVE" "List archive contents"
     printf "  %-36s %s\n" "arch_test ARCHIVE" "Verify archive integrity"
-    printf "  %-36s %s\n" "arch_extract_to ARCHIVE TARGET_DIR" "Extract archive into target directory"
+    printf "  %-36s %s\n" "arch_extract_to ARCHIVE [TARGET_DIR]" "Extract archive into target directory"
     printf "  %-36s %s\n" "arch_help" "Show archive help"
 }
