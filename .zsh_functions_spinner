@@ -122,6 +122,6 @@ spinner_wait() {
 # -------------------------------------------------------------------
 spinner_help() {
   echo "Spinner helper functions:"
-  printf "  %-36s %s\n" "spinner_progress_wait" "Spinner with percentage based on file growth"
-  printf "  %-36s %s\n" "spinner_wait" "Spinner for generic background jobs"
+  printf "  %-36s %s\n" "spinner_progress_wait" "Show progress spinner based on file growth"
+  printf "  %-36s %s\n" "spinner_wait" "Show spinner for background jobs"
 }

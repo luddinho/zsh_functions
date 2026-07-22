@@ -388,7 +388,7 @@ iperf_test() {
       -m|--mode)
         shift
         if [[ -z "$1" ]]; then
-          echo "Fehlender Wert fuer --mode"
+          echo "Missing value for --mode"
           return 1
         fi
         mode_param="$1"
@@ -396,7 +396,7 @@ iperf_test() {
       -s|--server)
         shift
         if [[ -z "$1" ]]; then
-          echo "Fehlender Wert fuer --server"
+          echo "Missing value for --server"
           return 1
         fi
         server_param="$1"
@@ -404,7 +404,7 @@ iperf_test() {
       -p|--port)
         shift
         if [[ -z "$1" ]]; then
-          echo "Fehlender Wert fuer --port"
+          echo "Missing value for --port"
           return 1
         fi
         port_param="$1"
@@ -412,7 +412,7 @@ iperf_test() {
       -t|--time|--seconds)
         shift
         if [[ -z "$1" ]]; then
-          echo "Fehlender Wert fuer --time"
+          echo "Missing value for --time"
           return 1
         fi
         test_seconds_param="$1"
@@ -420,7 +420,7 @@ iperf_test() {
       -I|--ip-version)
         shift
         if [[ -z "$1" ]]; then
-          echo "Fehlender Wert fuer --ip-version"
+          echo "Missing value for --ip-version"
           return 1
         fi
         ip_version_param="$1"
@@ -429,20 +429,20 @@ iperf_test() {
         echo "Usage: iperf_test [--interactive]"
         echo "       iperf_test --mode upload|download --server HOST [--port PORT] [--ip-version auto|4|6]"
         echo
-        echo "Optionen:"
-        echo "  -i, --interactive   Interaktiven Dialog erzwingen"
-        echo "  -m, --mode          upload oder download (download = -R)"
+        echo "Options:"
+        echo "  -i, --interactive   Force interactive dialog"
+        echo "  -m, --mode          upload or download (download = -R)"
         echo "  -s, --server        iPerf3 Server (Host/IP)"
-        echo "  -p, --port          Einzelner Port (1-65535), sonst Auto-Scan"
-        echo "  -t, --time          Testdauer in Sekunden (Default: 10)"
-        echo "  -I, --ip-version    4 (Default), 6 oder auto"
+        echo "  -p, --port          Single port (1-65535), otherwise auto-scan"
+        echo "  -t, --time          Test duration in seconds (default: 10)"
+        echo "  -I, --ip-version    4 (default), 6 or auto"
         echo
-        echo "Hinweis: Fuer den Timeout nutzt die Funktion timeout/gtimeout oder Perl alarm."
+        echo "Note: timeout uses timeout/gtimeout when available, otherwise Perl alarm."
         return 0
         ;;
       *)
-        echo "Unbekannte Option: $1"
-        echo "Nutze --help fuer die Syntax."
+        echo "Unknown option: $1"
+        echo "Use --help for syntax."
         return 1
         ;;
     esac
@@ -450,26 +450,26 @@ iperf_test() {
   done
 
   if [[ $use_interactive -eq 1 ]]; then
-    echo "=== iPerf3 Testrichtung ==="
-    echo "1) Senden (Upload - Standard)"
-    echo "2) Empfangen (Download - Reverse Mode)"
-    read -r "mode_choice?Waehle eine Option (1-2): "
+    echo "=== iPerf3 test direction ==="
+    echo "1) Send (Upload - default)"
+    echo "2) Receive (Download - reverse mode)"
+    read -r "mode_choice?Choose an option (1-2): "
 
     case "$mode_choice" in
       1) mode_args=() ;;
       2) mode_args=(-R) ;;
-      *) echo "Ungueltige Auswahl. Abbruch."; return 1 ;;
+      *) echo "Invalid selection. Aborting."; return 1 ;;
     esac
 
     echo
-    echo "=== Oeffentlichen iPerf3-Server waehlen ==="
+    echo "=== Choose a public iPerf3 server ==="
     echo "1) Scaleway / Online.net (Frankreich, 100 Gbit/s)"
     echo "2) Moji (Frankreich, 100 Gbit/s)"
     echo "3) MilkyWan (Frankreich, 40 Gbit/s)"
     echo "4) Bouygues Telecom (Paris BBR, 10 Gbit/s)"
     echo "5) Serverius (Niederlande, 10 Gbit/s)"
-    echo "6) Eigener Server / IP eingeben"
-    read -r "server_choice?Waehle einen Server (1-6): "
+    echo "6) Enter custom server / IP"
+    read -r "server_choice?Choose a server (1-6): "
 
     case "$server_choice" in
       1) server="ping.online.net"; ports_to_try=(5201 5200 5202 5203 5204 5205 5206 5207 5208 5209) ;;
@@ -478,16 +478,16 @@ iperf_test() {
       4) server="paris.bbr.iperf.bytel.fr"; ports_to_try=(9200 9201 9202 9203 9204 9205 9210 9220) ;;
       5) server="speedtest.serverius.net"; ports_to_try=(5002) ;;
       6)
-        read -r "server?Gib die Server-IP oder Domain ein: "
+        read -r "server?Enter server IP or domain: "
         if [[ -z "$server" ]]; then
-          echo "Kein Server angegeben. Abbruch."
+          echo "No server provided. Aborting."
           return 1
         fi
 
-        read -r "custom_port?Port eingeben (Leer lassen fuer Auto-Scan): "
+        read -r "custom_port?Enter port (leave empty for auto-scan): "
         if [[ -n "$custom_port" ]]; then
           if [[ "$custom_port" != <-> || "$custom_port" -lt 1 || "$custom_port" -gt 65535 ]]; then
-            echo "Ungueltiger Port: $custom_port"
+            echo "Invalid port: $custom_port"
             return 1
           fi
           ports_to_try=("$custom_port")
@@ -495,27 +495,27 @@ iperf_test() {
           ports_to_try=(5201 5202 5203 5204 5205)
         fi
         ;;
-      *) echo "Ungueltige Auswahl. Abbruch."; return 1 ;;
+      *) echo "Invalid selection. Aborting."; return 1 ;;
     esac
   else
     case "${mode_param:l}" in
       upload|up|send|senden) mode_choice="1"; mode_args=() ;;
       download|down|receive|reverse|empfangen) mode_choice="2"; mode_args=(-R) ;;
       *)
-        echo "Im nicht-interaktiven Modus ist --mode upload|download erforderlich."
+        echo "In non-interactive mode, --mode upload|download is required."
         return 1
         ;;
     esac
 
     if [[ -z "$server_param" ]]; then
-      echo "Im nicht-interaktiven Modus ist --server HOST erforderlich."
+      echo "In non-interactive mode, --server HOST is required."
       return 1
     fi
     server="$server_param"
 
     if [[ -n "$port_param" ]]; then
       if [[ "$port_param" != <-> || "$port_param" -lt 1 || "$port_param" -gt 65535 ]]; then
-        echo "Ungueltiger Port: $port_param"
+        echo "Invalid port: $port_param"
         return 1
       fi
       ports_to_try=("$port_param")
@@ -523,12 +523,12 @@ iperf_test() {
       ports_to_try=(5201 5202 5203 5204 5205)
     fi
 
-    echo "Nicht-interaktiver Modus aktiv: mode=${mode_param:l}, server=$server, ports=${ports_to_try[*]}"
+    echo "Non-interactive mode enabled: mode=${mode_param:l}, server=$server, ports=${ports_to_try[*]}"
   fi
 
   if [[ -n "$test_seconds_param" ]]; then
     if [[ "$test_seconds_param" != <-> || "$test_seconds_param" -lt 1 ]]; then
-      echo "Ungueltiger Wert fuer --time: $test_seconds_param (mindestens 1)"
+      echo "Invalid value for --time: $test_seconds_param (minimum 1)"
       return 1
     fi
     test_seconds=$test_seconds_param
@@ -539,17 +539,17 @@ iperf_test() {
     4|ipv4) ip_args=(-4) ;;
     6|ipv6) ip_args=(-6) ;;
     *)
-      echo "Ungueltiger Wert fuer --ip-version: $ip_version_param (erlaubt: auto|4|6)"
+      echo "Invalid value for --ip-version: $ip_version_param (allowed: auto|4|6)"
       return 1
       ;;
   esac
 
   if ! command -v iperf3 >/dev/null 2>&1; then
-    echo "Fehler: iperf3 ist nicht installiert."
+    echo "Error: iperf3 is not installed."
     if [[ "$(uname)" == "Darwin" ]]; then
-      echo "Tipp (macOS): brew install iperf3"
+      echo "Tip (macOS): brew install iperf3"
     else
-      echo "Tipp (Debian/Ubuntu): sudo apt update && sudo apt install iperf3"
+      echo "Tip (Debian/Ubuntu): sudo apt update && sudo apt install iperf3"
     fi
     return 1
   fi
@@ -561,7 +561,7 @@ iperf_test() {
   trap '[[ -n "$iperf_pid" ]] && kill "$iperf_pid" 2>/dev/null; [[ -n "$err_file" ]] && rm -f "$err_file"; [[ -n "$out_file" ]] && rm -f "$out_file"' INT TERM EXIT
 
   echo
-  echo "Starte Port-Rotation fuer $server..."
+  echo "Starting port rotation for $server..."
   echo "----------------------------------------"
 
   local port
@@ -572,7 +572,7 @@ iperf_test() {
 
   for port in "${ports_to_try[@]}"; do
     for ((retry=1; retry<=max_retries; retry++)); do
-      echo "Testen von $server auf Port $port (Versuch $retry/$max_retries)..."
+      echo "Testing $server on port $port (attempt $retry/$max_retries)..."
 
       : > "$err_file"
       : > "$out_file"
@@ -598,32 +598,32 @@ iperf_test() {
           break 2
         fi
 
-        printf '%s\n\n' "-> Verbindung war zwar erfolgreich, aber es wurden keine Messdaten geliefert."
+        printf '%s\n\n' "-> Connection succeeded, but no measurement data was returned."
         break
       elif [[ $exit_code -eq 137 || $exit_code -eq 143 ]]; then
-        printf '%s\n\n' "-> Haenger/Timeout im Reverse-Modus (Datenpakete blockiert)."
+        printf '%s\n\n' "-> Hang/timeout in reverse mode (data packets blocked)."
         break
       else
         err_msg=$(<"$err_file")
         if [[ "$err_msg" == *busy* || "$err_msg" == *temporarily\ unavailable* ]]; then
-          printf '%s\n\n' "-> Server belegt. Warte ${delay_seconds}s..."
+          printf '%s\n\n' "-> Server busy. Waiting ${delay_seconds}s..."
           sleep "$delay_seconds"
         elif [[ "$err_msg" == *Network\ is\ unreachable* ]]; then
           network_unreachable_seen=1
           if [[ "${ip_version_param:l}" == "auto" && $used_ipv4_fallback -eq 0 ]]; then
             used_ipv4_fallback=1
             ip_args=(-4)
-            echo "-> Keine Route erreichbar (oft IPv6-Problem). Wiederhole Test mit IPv4 (-4)."
+            echo "-> No route reachable (often an IPv6 issue). Retrying with IPv4 (-4)."
             continue
           fi
 
-          printf '%s\n' "-> Keine Route zum Zielnetz (Network is unreachable)."
-          printf '%s\n\n' "   Pruefung: Internet/Route/DNS, optional --ip-version 4 testen."
+          printf '%s\n' "-> No route to destination network (Network is unreachable)."
+          printf '%s\n\n' "   Check: internet/route/DNS, optionally test with --ip-version 4."
           break 2
         else
-          printf '%s\n' "-> Port nicht erreichbar oder geschlossen."
+          printf '%s\n' "-> Port unreachable or closed."
           if [[ -n "$err_msg" ]]; then
-            printf '%s\n\n' "   Ursache: $err_msg"
+            printf '%s\n\n' "   Cause: $err_msg"
           else
             echo
           fi
@@ -637,16 +637,16 @@ iperf_test() {
   trap - INT TERM EXIT
 
   if [[ $success -ne 1 ]]; then
-    echo "Alle Ports waren erfolglos."
+    echo "All ports failed."
     if [[ $network_unreachable_seen -eq 1 ]]; then
-      echo "Hinweis: Das ist eher ein Routing/Netzproblem als ein Port- oder Firewall-Thema am Zielserver."
+      echo "Note: This is more likely a routing/network issue than a port or firewall issue on the target server."
     elif [[ "$mode_choice" == "2" ]]; then
-      echo "Hinweis: Da der Download-Modus fehlschlug, blockiert vermutlich deine Router-Firewall (SPI/Flood-Protection) diesen Traffic."
+      echo "Note: Since download mode failed, your router firewall (SPI/flood protection) likely blocks this traffic."
     fi
     return 1
   fi
 
-  echo "Erfolgreich ueber Port $success_port getestet."
+  echo "Successfully tested via port $success_port."
 }
 
 # -------------------------------------------------------------------
@@ -654,11 +654,11 @@ iperf_test() {
 # -------------------------------------------------------------------
 network_help() {
   echo "Network helper functions:"
-  printf "  %-36s %s\n" "myip" "Local interface IPv4/IPv6 addresses"
-  printf "  %-36s %s\n" "myip_public" "Public IP with provider fallback"
-  printf "  %-36s %s\n" "port_check HOST PORT" "TCP port reachability test"
+  printf "  %-36s %s\n" "myip" "Show local interface IPv4/IPv6 addresses"
+  printf "  %-36s %s\n" "myip_public" "Show public IP with provider fallback"
+  printf "  %-36s %s\n" "port_check HOST PORT" "Check TCP port reachability"
   printf "  %-36s %s\n" "whichport PORT [PROTO]" "Show process using local port"
-  printf "  %-36s %s\n" "dns_check HOST [DNS]" "DNS record overview (A/AAAA/CNAME/MX/NS)"
+  printf "  %-36s %s\n" "dns_check HOST [DNS]" "Show DNS records (A/AAAA/CNAME/MX/NS)"
   printf "  %-36s %s\n" "listening_ports" "Show listening TCP/UDP sockets"
-  printf "  %-36s %s\n" "iperf_test [options]" "Interactive/non-interactive iPerf3 test"
+  printf "  %-36s %s\n" "iperf_test [options]" "Run interactive or non-interactive iPerf3 test"
 }

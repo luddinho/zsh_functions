@@ -16,14 +16,14 @@ path() {
 
 
 power_on_hours() {
-    # Für alle /dev/sd? Geräte Power_On_Hours auslesen, in Jahre umrechnen und beides ausgeben
+  # Read Power_On_Hours for all /dev/sd? devices, convert to years, and print both values
     for dev in /dev/sd?; do
         hours=$(smartctl -a -d sat "$dev" | awk '/Power_On_Hours/ {print $NF}')
         if [[ -n "$hours" && "$hours" =~ ^[0-9]+$ ]]; then
             years=$(awk "BEGIN {printf \"%.2f\", $hours/24/365}")
             echo "$dev: $hours Stunden ≈ $years Jahre"
         else
-            echo "$dev: Wert nicht verfügbar"
+            echo "$dev: Value not available"
         fi
     done
 }
@@ -39,7 +39,7 @@ epoch() {
 }
 
 
-# Epoch zu Datum (automatisch für Linux/macOS)
+# Epoch to date (automatic Linux/macOS handling)
 epoch2date() {
   if date -d @0 +%F >/dev/null 2>&1; then
     date -d "@$1"
@@ -434,17 +434,17 @@ calc() {
 general_help() {
   echo "General helper functions:"
   printf "  %-36s %s\n" "extractpath CMD" "Show command resolution"
-  printf "  %-36s %s\n" "mkcdtemp [PREFIX]" "Create and cd into temp directory"
+  printf "  %-36s %s\n" "mkcdtemp [PREFIX]" "Create and enter temporary directory"
   printf "  %-36s %s\n" "backup_file PATH" "Create timestamped backup"
   printf "  %-36s %s\n" "retry N DELAY CMD [ARGS...]" "Retry command until success"
   printf "  %-36s %s\n" "stopwatch CMD [ARGS...]" "Run command and print elapsed time"
   printf "  %-36s %s\n" "json_pretty [FILE]" "Pretty-print JSON"
   printf "  %-36s %s\n" "urlencode TEXT" "URL-encode text"
   printf "  %-36s %s\n" "urldecode TEXT" "URL-decode text"
-  printf "  %-36s %s\n" "fsize [PATH ...]" "Show size of files/directories"
+  printf "  %-36s %s\n" "fsize [PATH ...]" "Show file or directory size"
   printf "  %-36s %s\n" "sysinfo_short" "Print compact system summary"
-  printf "  %-36s %s\n" "psg PATTERN" "Process search"
+  printf "  %-36s %s\n" "psg PATTERN" "Search processes"
   printf "  %-36s %s\n" "cleanup_dsstore [PATH]" "Delete .DS_Store files recursively"
-  printf "  %-36s %s\n" "weather [LOCATION]" "Quick weather lookup"
+  printf "  %-36s %s\n" "weather [LOCATION]" "Show weather forecast"
   printf "  %-36s %s\n" "calc EXPRESSION" "Evaluate expression"
 }

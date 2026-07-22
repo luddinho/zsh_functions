@@ -548,6 +548,6 @@ dummyfiles() {
 # -------------------------------------------------------------------
 dummy_help() {
   echo "Dummy helper functions:"
-  printf "  %-36s %s\n" "dummyfiles" "Create one or multiple dummy files"
+  printf "  %-36s %s\n" "dummyfiles" "Create one or more dummy files"
 }
 

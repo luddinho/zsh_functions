@@ -280,6 +280,6 @@ rsync_pull_remote() {
 # Show available rsync helper functions in this module.
 rsync_help() {
   echo "Rsync helper functions:"
-  printf "  %-36s %s\n" "rsync_push_remote" "Push local source to remote path over SSH"
-  printf "  %-36s %s\n" "rsync_pull_remote" "Pull remote path to local target over SSH"
+  printf "  %-36s %s\n" "rsync_push_remote" "Upload local source to remote path over SSH"
+  printf "  %-36s %s\n" "rsync_pull_remote" "Download remote path to local target over SSH"
 }

@@ -1,7 +1,7 @@
 #!/bin/bash
-# Funktionen zur Verwaltung von SSH-Schlüsseln
+# Functions for managing SSH keys
 
-# Aktualisiert den Kommentar eines bestehenden SSH-Schlüssels
+# Update the comment of an existing SSH key
 sshkey_update_comment() {
   if [[ $# -lt 2 ]]; then
     echo "Usage: sshkey_update_comment <keyfile> <new_comment>"
@@ -16,7 +16,7 @@ sshkey_update_comment() {
   ssh-keygen -c -C "$new_comment" -f "$keyfile"
 }
 
-# Installiert einen öffentlichen Schlüssel auf einem entfernten Server
+# Install a public key on a remote server
 sshkey_install_pubkey() {
   if [[ $# -lt 4 ]]; then
     echo "Usage: sshkey_install_pubkey <pubkey_file> <user> <host> <port>"
@@ -33,7 +33,7 @@ sshkey_install_pubkey() {
   cat "$pubkey_file" | ssh -p "$port" "$user@$host" install-ssh-key
 }
 
-# Exportiert den öffentlichen Schlüssel aus einer privaten Schlüsseldatei
+# Export the public key from a private key file
 sshkey_export_pubkey() {
   if [[ $# -lt 1 ]]; then
     echo "Usage: sshkey_export_pubkey <private_key_file> [output_pubkey_file]"
@@ -49,7 +49,7 @@ sshkey_export_pubkey() {
   echo "Public key exported to: $pubkey"
 }
 
-# Ändert das Passwort (Passphrase) eines bestehenden privaten Schlüssels
+# Change the password (passphrase) of an existing private key
 sshkey_update_password() {
   if [[ $# -lt 1 ]]; then
     echo "Usage: sshkey_update_password <private_key_file>"
@@ -63,7 +63,7 @@ sshkey_update_password() {
   ssh-keygen -p -f "$privkey"
 }
 
-# Erstellt einen neuen SSH-Schlüssel vom Typ ed25519 mit Kommentar
+# Create a new ed25519 SSH key with comment
 sshkey_create_ed25519() {
   if [[ $# -lt 2 ]]; then
     echo "Usage: sshkey_create_ed25519 <output_file> <comment>"
@@ -74,7 +74,7 @@ sshkey_create_ed25519() {
   ssh-keygen -t ed25519 -f "$output_file" -C "$comment"
 }
 
-# Zeigt Fingerprint und Typ eines öffentlichen Schlüssels an
+# Show fingerprint and type of a public key
 sshkey_show_fingerprint() {
   if [[ $# -lt 1 ]]; then
     echo "Usage: sshkey_show_fingerprint <pubkey_file>"
@@ -88,8 +88,8 @@ sshkey_show_fingerprint() {
   ssh-keygen -lf "$pubkey"
 }
 
-# Prüft, ob ein öffentlicher Schlüssel bereits auf einem Server installiert ist
-# Versucht zuerst ~/.ssh/authorized_keys, falls das nicht klappt, versucht /home/.ssh/authorized_keys
+# Check whether a public key is already installed on a server
+# Tries ~/.ssh/authorized_keys first; if unavailable, tries /home/.ssh/authorized_keys
 sshkey_check_on_server() {
   if [[ $# -lt 4 ]]; then
     echo "Usage: sshkey_check_on_server <pubkey_file> <user> <host> <port>"
@@ -112,7 +112,7 @@ sshkey_check_on_server() {
   "
 }
 
-# Entfernt einen öffentlichen Schlüssel aus authorized_keys auf dem Server
+# Remove a public key from authorized_keys on the server
 sshkey_remove_from_server() {
   if [[ $# -lt 4 ]]; then
     echo "Usage: sshkey_remove_from_server <pubkey_file> <user> <host> <port>"
@@ -124,7 +124,7 @@ sshkey_remove_from_server() {
   local port="$4"
   local pubkey
   pubkey=$(cat "$pubkey_file")
-  # Versuche zuerst mit ~/.ssh/authorized_keys, falls das nicht klappt, versuche /home/.ssh/authorized_keys
+  # Try ~/.ssh/authorized_keys first; if unavailable, try /home/.ssh/authorized_keys
   ssh -p "$port" "$user@$host" "
     if [ -f ~/.ssh/authorized_keys ]; then
       grep -vF '$pubkey' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp && mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
@@ -138,21 +138,21 @@ sshkey_remove_from_server() {
   "
 }
 
-# Listet alle öffentlichen SSH-Schlüssel im .ssh-Verzeichnis auf
+# List all public SSH keys in the .ssh directory
 sshkey_list() {
 find ~/.ssh -maxdepth 1 -type f -name "*.pub" 2>/dev/null
 }
 
-# Zeigt alle verfügbaren SSH-Key-Hilfsfunktionen mit Kurzbeschreibung
+# Show all available SSH key helper functions with short descriptions
 sshkey_help() {
   echo "SSH key helper functions:"
-  printf "  %-36s %s\n" "sshkey_update_comment" "Update comment of a key"
+  printf "  %-36s %s\n" "sshkey_update_comment" "Update key comment"
   printf "  %-36s %s\n" "sshkey_install_pubkey" "Install public key on server"
   printf "  %-36s %s\n" "sshkey_export_pubkey" "Export public key from private key"
   printf "  %-36s %s\n" "sshkey_update_password" "Change private key passphrase"
   printf "  %-36s %s\n" "sshkey_create_ed25519" "Create ed25519 key"
-  printf "  %-36s %s\n" "sshkey_show_fingerprint" "Show fingerprint of public key"
-  printf "  %-36s %s\n" "sshkey_check_on_server" "Check if key exists in authorized_keys"
+  printf "  %-36s %s\n" "sshkey_show_fingerprint" "Show public key fingerprint"
+  printf "  %-36s %s\n" "sshkey_check_on_server" "Check key presence in authorized_keys"
   printf "  %-36s %s\n" "sshkey_remove_from_server" "Remove key from authorized_keys"
   printf "  %-36s %s\n" "sshkey_list" "List local public keys"
 }

@@ -25,8 +25,8 @@ if [[ -f "$ZSH_FUNCTIONS_DIR/.zsh_functions_spinner" ]]; then
 	source "$ZSH_FUNCTIONS_DIR/.zsh_functions_spinner"
 fi
 
-if [[ -f "$ZSH_FUNCTIONS_DIR/.zsh_funtions_rsync" ]]; then
-	source "$ZSH_FUNCTIONS_DIR/.zsh_funtions_rsync"
+if [[ -f "$ZSH_FUNCTIONS_DIR/.zsh_functions_rsync" ]]; then
+	source "$ZSH_FUNCTIONS_DIR/.zsh_functions_rsync"
 fi
 
 if [[ -f "$ZSH_FUNCTIONS_DIR/.zsh_functions_sshkey" ]]; then

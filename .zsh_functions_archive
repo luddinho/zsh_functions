@@ -355,10 +355,10 @@ arch_extract_to() {
 # -------------------------------------------------------------------
 arch_help() {
     echo "Archive helper functions:"
-    printf "  %-36s %s\n" "extract ARCHIVE" "Legacy extractor"
+    printf "  %-36s %s\n" "extract ARCHIVE" "Extract supported archive in current directory"
     printf "  %-36s %s\n" "arch_create FORMAT OUTPUT INPUT..." "Create archive"
-    printf "  %-36s %s\n" "arch_list ARCHIVE" "List archive content"
-    printf "  %-36s %s\n" "arch_test ARCHIVE" "Test archive integrity"
-    printf "  %-36s %s\n" "arch_extract_to ARCHIVE TARGET_DIR" "Extract to directory"
-    printf "  %-36s %s\n" "arch_help" "Show this help"
+    printf "  %-36s %s\n" "arch_list ARCHIVE" "List archive contents"
+    printf "  %-36s %s\n" "arch_test ARCHIVE" "Verify archive integrity"
+    printf "  %-36s %s\n" "arch_extract_to ARCHIVE TARGET_DIR" "Extract archive into target directory"
+    printf "  %-36s %s\n" "arch_help" "Show archive help"
 }
