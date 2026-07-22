@@ -2,7 +2,7 @@
 # Functions for managing SSH keys
 
 # Update the comment of an existing SSH key
-sshkey_update_comment() {
+function sshkey_update_comment {
   if [[ $# -lt 2 ]]; then
     echo "Usage: sshkey_update_comment <keyfile> <new_comment>"
     return 1
@@ -17,7 +17,7 @@ sshkey_update_comment() {
 }
 
 # Install a public key on a remote server
-sshkey_install_pubkey() {
+function sshkey_install_pubkey {
   if [[ $# -lt 4 ]]; then
     echo "Usage: sshkey_install_pubkey <pubkey_file> <user> <host> <port>"
     return 1
@@ -34,7 +34,7 @@ sshkey_install_pubkey() {
 }
 
 # Export the public key from a private key file
-sshkey_export_pubkey() {
+function sshkey_export_pubkey {
   if [[ $# -lt 1 ]]; then
     echo "Usage: sshkey_export_pubkey <private_key_file> [output_pubkey_file]"
     return 1
@@ -50,7 +50,7 @@ sshkey_export_pubkey() {
 }
 
 # Change the password (passphrase) of an existing private key
-sshkey_update_password() {
+function sshkey_update_password {
   if [[ $# -lt 1 ]]; then
     echo "Usage: sshkey_update_password <private_key_file>"
     return 1
@@ -64,7 +64,7 @@ sshkey_update_password() {
 }
 
 # Create a new ed25519 SSH key with comment
-sshkey_create_ed25519() {
+function sshkey_create_ed25519 {
   if [[ $# -lt 2 ]]; then
     echo "Usage: sshkey_create_ed25519 <output_file> <comment>"
     return 1
@@ -75,7 +75,7 @@ sshkey_create_ed25519() {
 }
 
 # Show fingerprint and type of a public key
-sshkey_show_fingerprint() {
+function sshkey_show_fingerprint {
   if [[ $# -lt 1 ]]; then
     echo "Usage: sshkey_show_fingerprint <pubkey_file>"
     return 1
@@ -90,7 +90,7 @@ sshkey_show_fingerprint() {
 
 # Check whether a public key is already installed on a server
 # Tries ~/.ssh/authorized_keys first; if unavailable, tries /home/.ssh/authorized_keys
-sshkey_check_on_server() {
+function sshkey_check_on_server {
   if [[ $# -lt 4 ]]; then
     echo "Usage: sshkey_check_on_server <pubkey_file> <user> <host> <port>"
     return 1
@@ -113,7 +113,7 @@ sshkey_check_on_server() {
 }
 
 # Remove a public key from authorized_keys on the server
-sshkey_remove_from_server() {
+function sshkey_remove_from_server {
   if [[ $# -lt 4 ]]; then
     echo "Usage: sshkey_remove_from_server <pubkey_file> <user> <host> <port>"
     return 1
@@ -139,12 +139,12 @@ sshkey_remove_from_server() {
 }
 
 # List all public SSH keys in the .ssh directory
-sshkey_list() {
+function sshkey_list {
 find ~/.ssh -maxdepth 1 -type f -name "*.pub" 2>/dev/null
 }
 
 # Show all available SSH key helper functions with short descriptions
-sshkey_help() {
+function sshkey_help {
   echo "SSH key helper functions:"
   printf "  %-36s %s\n" "sshkey_update_comment" "Update key comment"
   printf "  %-36s %s\n" "sshkey_install_pubkey" "Install public key on server"

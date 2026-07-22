@@ -58,7 +58,7 @@ function myip() {
 # -------------------------------------------------------------------
 # public IP address with fallback providers
 # -------------------------------------------------------------------
-myip_public() {
+function myip_public {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -102,7 +102,7 @@ myip_public() {
 # -------------------------------------------------------------------
 # check TCP port reachability
 # -------------------------------------------------------------------
-port_check() {
+function port_check {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -153,7 +153,7 @@ port_check() {
 # -------------------------------------------------------------------
 # DNS record overview
 # -------------------------------------------------------------------
-dns_check() {
+function dns_check {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -209,7 +209,7 @@ dns_check() {
 # -------------------------------------------------------------------
 # list listening TCP/UDP ports with process info
 # -------------------------------------------------------------------
-listening_ports() {
+function listening_ports {
   emulate -L zsh
 
   local -i quiet=1
@@ -282,7 +282,7 @@ listening_ports() {
 # -------------------------------------------------------------------
 # show which process uses a given port
 # -------------------------------------------------------------------
-whichport() {
+function whichport {
   emulate -L zsh
 
   local -i quiet=1
@@ -388,7 +388,7 @@ whichport() {
 # -------------------------------------------------------------------
 # iPerf timeout wrapper (macOS/Linux)
 # -------------------------------------------------------------------
-iperf_timeout_cmd() {
+function iperf_timeout_cmd {
   emulate -L zsh
 
   local -i timeout_seconds="$1"
@@ -406,7 +406,7 @@ iperf_timeout_cmd() {
 # -------------------------------------------------------------------
 # iPerf3 connectivity/performance test helper
 # -------------------------------------------------------------------
-iperf_test() {
+function iperf_test {
   emulate -L zsh
   setopt localoptions localtraps no_notify no_monitor
 
@@ -712,7 +712,7 @@ iperf_test() {
 # -------------------------------------------------------------------
 # quick help for network helper functions
 # -------------------------------------------------------------------
-network_help() {
+function network_help {
   echo "Network helper functions:"
   printf "  %-36s %s\n" "myip" "Show local interface IPv4/IPv6 addresses"
   printf "  %-36s %s\n" "myip_public" "Show public IP with provider fallback"

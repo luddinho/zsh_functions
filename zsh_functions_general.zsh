@@ -4,7 +4,7 @@
 # -------------------------------------------------------------------
 # display a neatly formatted path
 # -------------------------------------------------------------------
-path() {
+function path {
   echo $PATH | tr ":" "\n" | \
     awk "{ sub(\"/usr\",   \"$fg_no_bold[green]/usr$reset_color\");
            sub(\"/bin\",   \"$fg_no_bold[blue]/bin$reset_color\");
@@ -15,7 +15,7 @@ path() {
 }
 
 
-disk_power_on_hours() {
+function disk_power_on_hours {
   # Read Power_On_Hours from whole-disk devices and convert the value to years.
   emulate -L zsh
 
@@ -59,7 +59,7 @@ disk_power_on_hours() {
 
 
 # Outputs the current epoch time or converts argument to human-readable date and time
-epoch() {
+function epoch {
   if [ $# -eq 0 ]; then
     date +%s
   else
@@ -69,7 +69,7 @@ epoch() {
 
 
 # Epoch to date (automatic Linux/macOS handling)
-epoch2date() {
+function epoch2date {
   if date -d @0 +%F >/dev/null 2>&1; then
     date -d "@$1"
   else
@@ -78,13 +78,13 @@ epoch2date() {
 }
 
 # Current date to epoch
-date2epoch() {
+function date2epoch {
   date +%s
 }
 
 
 # Create a new directory and enter it
-mkd() {
+function mkd {
         mkdir -p "$@"
         cd "$@" || exit
 }
@@ -94,7 +94,7 @@ mkd() {
 # Very often changing to a directory is followed by the ls command to list its contents.
 # Therefore it is helpful to have a second function doing both at once.
 # In this example we will name it cl (change list) and show an error message if the specified directory does not exist.
-cl() {
+function cl {
         local dir="$1"
         local dir="${dir:=$HOME}"
         if [[ -d "$dir" ]]; then
@@ -108,13 +108,13 @@ cl() {
 # List folders sorted by size, showing the largest first.
 # A helper where to start cleaning when the disk is full.
 # Use it with the syntax whatsize directory or just whatsize to list the / directory sizes.
-whatsize(){
+function whatsize {
     du -h -x -P -t 1 -d 1 --exclude=/{proc,sys,dev,run} --exclude='*/#snapshot' --exclude='#snapshot' ${1:-/} 2>/dev/null | sort -hr
 }
 
 
 # Restart all running services except ssh, dbus, systemd-logind
-service-restart-all() {
+function service-restart-all {
   emulate -L zsh
 
   if command -v systemctl >/dev/null 2>&1; then
@@ -136,7 +136,7 @@ service-restart-all() {
 }
 
 # List all running services
-service-list-running() {
+function service-list-running {
   emulate -L zsh
 
   if command -v systemctl >/dev/null 2>&1; then
@@ -154,7 +154,7 @@ service-list-running() {
 }
 
 # Internal usage printer to keep help output consistent.
-_general_usage() {
+function _general_usage {
   echo "Usage: $1"
   if [[ -n "$2" ]]; then
     echo "$2"
@@ -162,7 +162,7 @@ _general_usage() {
 }
 
 # Show resolved command type/path for troubleshooting shell resolution.
-extractpath() {
+function extractpath {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
@@ -174,7 +174,7 @@ extractpath() {
 }
 
 # Create and enter a temporary directory.
-mkcdtemp() {
+function mkcdtemp {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -194,7 +194,7 @@ mkcdtemp() {
 }
 
 # Create a timestamped backup copy.
-backup_file() {
+function backup_file {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
@@ -217,7 +217,7 @@ backup_file() {
 }
 
 # Retry a command several times with delay.
-retry() {
+function retry {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -254,7 +254,7 @@ retry() {
 }
 
 # Run a command and report elapsed time.
-stopwatch() {
+function stopwatch {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" || $# -lt 1 ]]; then
@@ -282,7 +282,7 @@ stopwatch() {
 }
 
 # Pretty-print JSON from file or stdin.
-json_pretty() {
+function json_pretty {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -313,7 +313,7 @@ json_pretty() {
 }
 
 # URL-encode a string.
-urlencode() {
+function urlencode {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
@@ -330,7 +330,7 @@ urlencode() {
 }
 
 # URL-decode a string.
-urldecode() {
+function urldecode {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
@@ -347,7 +347,7 @@ urldecode() {
 }
 
 # Show human-readable size for files/directories.
-fsize() {
+function fsize {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -370,7 +370,7 @@ fsize() {
 }
 
 # One-screen system summary.
-sysinfo_short() {
+function sysinfo_short {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -410,7 +410,7 @@ sysinfo_short() {
 }
 
 # Case-insensitive process search.
-psg() {
+function psg {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
@@ -423,7 +423,7 @@ psg() {
 }
 
 # Remove .DS_Store files recursively.
-cleanup_dsstore() {
+function cleanup_dsstore {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -441,7 +441,7 @@ cleanup_dsstore() {
 }
 
 # Quick weather lookup.
-weather() {
+function weather {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -463,7 +463,7 @@ weather() {
 }
 
 # Lightweight expression calculator.
-calc() {
+function calc {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
@@ -487,7 +487,7 @@ calc() {
 }
 
 # Overview of general helper functions.
-general_help() {
+function general_help {
   echo "General helper functions:"
   printf "  %-36s %s\n" "disk_power_on_hours" "Show disk power-on hours"
   printf "  %-36s %s\n" "extractpath CMD" "Show command resolution"

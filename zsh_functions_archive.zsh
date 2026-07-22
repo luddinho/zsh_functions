@@ -1,7 +1,7 @@
 #!/bin/bash
 ## Archive helper functions for zsh
 
-extract() {
+function extract {
         emulate -L zsh
 
         local archive="$1"
@@ -91,7 +91,7 @@ extract() {
 }
 
 # Internal usage printer to keep help output consistent.
-_arch_usage() {
+function _arch_usage {
     echo "Usage: $1"
     if [[ -n "$2" ]]; then
         echo "$2"
@@ -101,7 +101,7 @@ _arch_usage() {
 # -------------------------------------------------------------------
 # create archive from files/directories
 # -------------------------------------------------------------------
-arch_create() {
+function arch_create {
     emulate -L zsh
 
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -185,7 +185,7 @@ arch_create() {
 # -------------------------------------------------------------------
 # list archive content
 # -------------------------------------------------------------------
-arch_list() {
+function arch_list {
     emulate -L zsh
 
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -232,7 +232,7 @@ arch_list() {
 # -------------------------------------------------------------------
 # test archive integrity
 # -------------------------------------------------------------------
-arch_test() {
+function arch_test {
     emulate -L zsh
 
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -296,7 +296,7 @@ arch_test() {
 # -------------------------------------------------------------------
 # extract archive to a target directory
 # -------------------------------------------------------------------
-arch_extract_to() {
+function arch_extract_to {
     emulate -L zsh
 
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -423,7 +423,7 @@ arch_extract_to() {
 # -------------------------------------------------------------------
 # help for archive helpers
 # -------------------------------------------------------------------
-arch_help() {
+function arch_help {
     echo "Archive helper functions:"
     printf "  %-36s %s\n" "extract ARCHIVE" "Extract supported archive in current directory"
     printf "  %-36s %s\n" "arch_create FORMAT OUTPUT INPUT..." "Create archive"

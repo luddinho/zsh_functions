@@ -8,7 +8,7 @@
 #   rsync_push_remote ./src /srv/src --user alice --host example.org -- --delete --exclude .git
 
 # Auto-discover a suitable SSH identity file for a remote user/host pair.
-_rsync_pick_identity() {
+function _rsync_pick_identity {
   emulate -L zsh
   setopt localoptions noxtrace
 
@@ -65,7 +65,7 @@ _rsync_pick_identity() {
 }
 
 # Build the SSH command string with optional identity file.
-_rsync_build_ssh_cmd() {
+function _rsync_build_ssh_cmd {
   emulate -L zsh
   setopt localoptions noxtrace
 
@@ -80,7 +80,7 @@ _rsync_build_ssh_cmd() {
 }
 
 # Push local source path to a remote destination via rsync over SSH.
-rsync_push_remote() {
+function rsync_push_remote {
   emulate -L zsh
   setopt localoptions noxtrace no_notify no_monitor
 
@@ -179,7 +179,7 @@ rsync_push_remote() {
 }
 
 # Pull remote source path to a local destination via rsync over SSH.
-rsync_pull_remote() {
+function rsync_pull_remote {
   emulate -L zsh
   setopt localoptions noxtrace no_notify no_monitor
 
@@ -278,7 +278,7 @@ rsync_pull_remote() {
 }
 
 # Show available rsync helper functions in this module.
-rsync_help() {
+function rsync_help {
   echo "Rsync helper functions:"
   printf "  %-36s %s\n" "rsync_push_remote" "Upload local source to remote path over SSH"
   printf "  %-36s %s\n" "rsync_pull_remote" "Download remote path to local target over SSH"

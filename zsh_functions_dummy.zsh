@@ -2,7 +2,7 @@
 # Dummy file generator for testing purposes.
 
 # Create one or multiple dummy files with selectable default sizes and optional custom size.
-dummyfiles() {
+function dummyfiles {
   emulate -L zsh
   setopt localoptions noxtrace no_notify no_monitor
 
@@ -26,7 +26,7 @@ dummyfiles() {
   local -a cli_sizes positional_sizes
 
   # Parse human-readable size (SI/Binary units) and return bytes as integer.
-  _dummy_parse_size_bytes() {
+  function _dummy_parse_size_bytes {
     local input="$1"
     local parsed
 
@@ -88,7 +88,7 @@ dummyfiles() {
   }
 
   # Expand SIZE or SIZE*COUNT / SIZExCOUNT into one size per line.
-  _dummy_expand_size_token() {
+  function _dummy_expand_size_token {
     local token="$1"
     local default_repeat="${2:-1}"
     local size_expr
@@ -546,7 +546,7 @@ dummyfiles() {
 # -------------------------------------------------------------------
 # show available dummy helper functions
 # -------------------------------------------------------------------
-dummy_help() {
+function dummy_help {
   echo "Dummy helper functions:"
   printf "  %-36s %s\n" "dummyfiles" "Create one or more dummy files"
 }

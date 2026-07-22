@@ -2,7 +2,7 @@
 
 # Spinner with percentage progress based on written file size.
 # Usage: spinner_progress_wait <pid> <file_path> <total_bytes> [message]
-spinner_progress_wait() {
+function spinner_progress_wait {
   emulate -L zsh
   setopt localoptions noxtrace
 
@@ -75,7 +75,7 @@ spinner_progress_wait() {
 
 # Spinner for long-running background jobs.
 # Usage: spinner_wait <pid> [message]
-spinner_wait() {
+function spinner_wait {
   emulate -L zsh
   setopt localoptions noxtrace
 
@@ -120,7 +120,7 @@ spinner_wait() {
 # -------------------------------------------------------------------
 # show available spinner helper functions
 # -------------------------------------------------------------------
-spinner_help() {
+function spinner_help {
   echo "Spinner helper functions:"
   printf "  %-36s %s\n" "spinner_progress_wait" "Show progress spinner based on file growth"
   printf "  %-36s %s\n" "spinner_wait" "Show spinner for background jobs"
