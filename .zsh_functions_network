@@ -1,0 +1,664 @@
+#!/bin/bash
+
+# -------------------------------------------------------------------
+# myIP address
+# -------------------------------------------------------------------
+function myip() {
+  emulate -L zsh
+
+  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: myip"
+    echo "Shows local interface IPv4/IPv6 addresses (macOS/Linux)."
+    return 0
+  fi
+
+  if command -v ip >/dev/null 2>&1; then
+    local iface v4 v6
+    for iface in $(ip -o link show | awk -F': ' '{print $2}' | cut -d'@' -f1); do
+      [[ "$iface" == "lo" ]] && continue
+      v4=$(ip -o -4 addr show dev "$iface" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | paste -sd, -)
+      v6=$(ip -o -6 addr show dev "$iface" scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | paste -sd, -)
+
+      if [[ -n "$v4" ]]; then
+        echo "$iface\t(IPv4)\t$v4"
+      fi
+      if [[ -n "$v6" ]]; then
+        echo "$iface\t(IPv6)\t$v6"
+      fi
+    done
+    return 0
+  fi
+
+  if command -v ifconfig >/dev/null 2>&1; then
+    local iface v4 v6
+    for iface in $(ifconfig -l 2>/dev/null); do
+      [[ "$iface" == "lo0" || "$iface" == "lo" ]] && continue
+
+      if command -v ipconfig >/dev/null 2>&1; then
+        v4=$(ipconfig getifaddr "$iface" 2>/dev/null)
+      else
+        v4=$(ifconfig "$iface" 2>/dev/null | awk '/inet / {print $2}' | paste -sd, -)
+      fi
+      v6=$(ifconfig "$iface" 2>/dev/null | awk '/inet6 / {print $2}' | paste -sd, -)
+
+      if [[ -n "$v4" ]]; then
+        echo "$iface\t(IPv4)\t$v4"
+      fi
+      if [[ -n "$v6" ]]; then
+        echo "$iface\t(IPv6)\t$v6"
+      fi
+    done
+    return 0
+  fi
+
+  echo "No supported network tooling found (ip/ifconfig)."
+  return 1
+}
+
+# -------------------------------------------------------------------
+# public IP address with fallback providers
+# -------------------------------------------------------------------
+myip_public() {
+  emulate -L zsh
+
+  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: myip_public"
+    echo "Shows public IP using multiple fallback providers."
+    return 0
+  fi
+
+  local ip
+
+  if command -v curl >/dev/null 2>&1; then
+    for provider in "https://ifconfig.me/ip" "https://api.ipify.org" "https://icanhazip.com"; do
+      ip=$(curl -fsS --max-time 4 "$provider" 2>/dev/null | tr -d '[:space:]')
+      if [[ -n "$ip" ]]; then
+        echo "$ip"
+        return 0
+      fi
+    done
+  fi
+
+  if command -v dig >/dev/null 2>&1; then
+    ip=$(dig +short myip.opendns.com @resolver1.opendns.com 2>/dev/null | head -n1 | tr -d '[:space:]')
+    if [[ -n "$ip" ]]; then
+      echo "$ip"
+      return 0
+    fi
+  fi
+
+  if command -v wget >/dev/null 2>&1; then
+    ip=$(wget -qO- --timeout=4 "https://api.ipify.org" 2>/dev/null | tr -d '[:space:]')
+    if [[ -n "$ip" ]]; then
+      echo "$ip"
+      return 0
+    fi
+  fi
+
+  echo "Could not determine public IP (missing tools or network unavailable)."
+  return 1
+}
+
+# -------------------------------------------------------------------
+# check TCP port reachability
+# -------------------------------------------------------------------
+port_check() {
+  emulate -L zsh
+
+  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: port_check <host> <port> [timeout_seconds]"
+    echo "Checks whether a TCP port is reachable (macOS/Linux)."
+    return 0
+  fi
+
+  local host="$1"
+  local port="$2"
+  local timeout_seconds="${3:-3}"
+
+  if [[ -z "$host" || -z "$port" ]]; then
+    echo "Usage: port_check <host> <port> [timeout_seconds]"
+    return 1
+  fi
+
+  if [[ "$port" != <-> || "$port" -lt 1 || "$port" -gt 65535 ]]; then
+    echo "Invalid port: $port"
+    return 1
+  fi
+
+  if [[ "$timeout_seconds" != <-> || "$timeout_seconds" -lt 1 ]]; then
+    echo "Invalid timeout: $timeout_seconds"
+    return 1
+  fi
+
+  if ! command -v nc >/dev/null 2>&1; then
+    echo "nc is required for port_check."
+    return 1
+  fi
+
+  if [[ "$(uname)" == "Darwin" ]]; then
+    nc -z -G "$timeout_seconds" "$host" "$port" >/dev/null 2>&1
+  else
+    nc -z -w "$timeout_seconds" "$host" "$port" >/dev/null 2>&1
+  fi
+
+  if [[ $? -eq 0 ]]; then
+    echo "OPEN: $host:$port"
+    return 0
+  fi
+
+  echo "CLOSED/UNREACHABLE: $host:$port"
+  return 1
+}
+
+# -------------------------------------------------------------------
+# DNS record overview
+# -------------------------------------------------------------------
+dns_check() {
+  emulate -L zsh
+
+  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: dns_check <host> [resolver]"
+    echo "Shows DNS A, AAAA, CNAME, MX, NS records."
+    echo "Example: dns_check example.com 1.1.1.1"
+    return 0
+  fi
+
+  local host="$1"
+  local resolver="$2"
+  local resolver_arg=""
+  local type
+
+  if [[ -z "$host" ]]; then
+    echo "Usage: dns_check <host> [resolver]"
+    return 1
+  fi
+
+  if [[ -n "$resolver" ]]; then
+    resolver_arg="@$resolver"
+  fi
+
+  if command -v dig >/dev/null 2>&1; then
+    echo "DNS check for: $host"
+    if [[ -n "$resolver" ]]; then
+      echo "Resolver: $resolver"
+    fi
+
+    for type in A AAAA CNAME MX NS; do
+      echo
+      echo "$type:"
+      dig +short "$host" "$type" "$resolver_arg" 2>/dev/null | sed '/^$/d' || true
+    done
+
+    return 0
+  fi
+
+  if command -v nslookup >/dev/null 2>&1; then
+    echo "dig not found, falling back to nslookup"
+    if [[ -n "$resolver" ]]; then
+      nslookup "$host" "$resolver"
+    else
+      nslookup "$host"
+    fi
+    return $?
+  fi
+
+  echo "No supported DNS tool found (dig/nslookup)."
+  return 1
+}
+
+# -------------------------------------------------------------------
+# list listening TCP/UDP ports with process info
+# -------------------------------------------------------------------
+listening_ports() {
+  emulate -L zsh
+
+  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: listening_ports"
+    echo "Lists listening TCP/UDP sockets with process info (macOS/Linux)."
+    return 0
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP -sTCP:LISTEN
+    local tcp_rc=$?
+    echo
+    lsof -nP -iUDP
+    local udp_rc=$?
+
+    if [[ $tcp_rc -ne 0 && $udp_rc -ne 0 ]]; then
+      echo "No listening sockets found or insufficient permissions."
+      return 1
+    fi
+    return 0
+  fi
+
+  if command -v ss >/dev/null 2>&1; then
+    ss -lntup
+    return $?
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+      netstat -anv -p tcp | awk '$6 == "LISTEN" {print}'
+      echo
+      netstat -anv -p udp
+    else
+      netstat -lntup 2>/dev/null || netstat -lntu
+    fi
+    return $?
+  fi
+
+  echo "No supported tool found (lsof/ss/netstat)."
+  return 1
+}
+
+# -------------------------------------------------------------------
+# show which process uses a given port
+# -------------------------------------------------------------------
+whichport() {
+  emulate -L zsh
+
+  if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: whichport <port> [tcp|udp]"
+    echo "Shows the process bound to a local port (macOS/Linux)."
+    return 0
+  fi
+
+  local port="$1"
+  local proto="${2:-tcp}"
+
+  if [[ -z "$port" ]]; then
+    echo "Usage: whichport <port> [tcp|udp]"
+    return 1
+  fi
+
+  if [[ "$port" != <-> || "$port" -lt 1 || "$port" -gt 65535 ]]; then
+    echo "Invalid port: $port"
+    return 1
+  fi
+
+  proto="${proto:l}"
+  if [[ "$proto" != "tcp" && "$proto" != "udp" ]]; then
+    echo "Invalid protocol: $proto (allowed: tcp|udp)"
+    return 1
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    if [[ "$proto" == "tcp" ]]; then
+      lsof -nP -iTCP:"$port" -sTCP:LISTEN
+    else
+      lsof -nP -iUDP:"$port"
+    fi
+    local rc=$?
+    if [[ $rc -eq 0 ]]; then
+      return 0
+    fi
+  fi
+
+  if command -v ss >/dev/null 2>&1; then
+    if [[ "$proto" == "tcp" ]]; then
+      ss -lntup 2>/dev/null | awk -v p=":$port" '$0 ~ p {print}'
+    else
+      ss -lnuap 2>/dev/null | awk -v p=":$port" '$0 ~ p {print}'
+    fi
+    if [[ $? -eq 0 ]]; then
+      return 0
+    fi
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+      if [[ "$proto" == "tcp" ]]; then
+        netstat -anv -p tcp | awk -v p=".$port" '$4 ~ p && $6 == "LISTEN" {print}'
+      else
+        netstat -anv -p udp | awk -v p=".$port" '$4 ~ p {print}'
+      fi
+    else
+      netstat -lntup 2>/dev/null | awk -v p=":$port" '$0 ~ p {print}'
+    fi
+    if [[ $? -eq 0 ]]; then
+      return 0
+    fi
+  fi
+
+  echo "No supported tool found (lsof/ss/netstat), or no process is bound to ${proto}:${port}."
+  return 1
+}
+
+# -------------------------------------------------------------------
+# iPerf timeout wrapper (macOS/Linux)
+# -------------------------------------------------------------------
+iperf_timeout_cmd() {
+  emulate -L zsh
+
+  local -i timeout_seconds="$1"
+  shift
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$timeout_seconds" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$timeout_seconds" "$@"
+  else
+    perl -e 'alarm shift; exec @ARGV' "$timeout_seconds" "$@"
+  fi
+}
+
+# -------------------------------------------------------------------
+# iPerf3 connectivity/performance test helper
+# -------------------------------------------------------------------
+iperf_test() {
+  emulate -L zsh
+  setopt localoptions localtraps no_notify no_monitor
+
+  local use_interactive=1
+  local mode_choice=""
+  local server_choice=""
+  local mode_param=""
+  local server_param=""
+  local port_param=""
+  local test_seconds_param=""
+  local ip_version_param="4"
+  local server=""
+  local custom_port=""
+  local err_file=""
+  local out_file=""
+  local iperf_pid=""
+  local -a ports_to_try
+  local -a mode_args
+  local -a ip_args
+  local -i max_retries=2
+  local -i delay_seconds=2
+  local -i test_seconds=10
+  local -i watchdog_buffer_seconds=4
+  local -i watchdog_seconds=0
+  local -i success=0
+  local -i success_port=0
+  local -i used_ipv4_fallback=0
+  local -i network_unreachable_seen=0
+
+  if [[ $# -gt 0 ]]; then
+    use_interactive=0
+  fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -i|--interactive)
+        use_interactive=1
+        ;;
+      -m|--mode)
+        shift
+        if [[ -z "$1" ]]; then
+          echo "Fehlender Wert fuer --mode"
+          return 1
+        fi
+        mode_param="$1"
+        ;;
+      -s|--server)
+        shift
+        if [[ -z "$1" ]]; then
+          echo "Fehlender Wert fuer --server"
+          return 1
+        fi
+        server_param="$1"
+        ;;
+      -p|--port)
+        shift
+        if [[ -z "$1" ]]; then
+          echo "Fehlender Wert fuer --port"
+          return 1
+        fi
+        port_param="$1"
+        ;;
+      -t|--time|--seconds)
+        shift
+        if [[ -z "$1" ]]; then
+          echo "Fehlender Wert fuer --time"
+          return 1
+        fi
+        test_seconds_param="$1"
+        ;;
+      -I|--ip-version)
+        shift
+        if [[ -z "$1" ]]; then
+          echo "Fehlender Wert fuer --ip-version"
+          return 1
+        fi
+        ip_version_param="$1"
+        ;;
+      -h|--help)
+        echo "Usage: iperf_test [--interactive]"
+        echo "       iperf_test --mode upload|download --server HOST [--port PORT] [--ip-version auto|4|6]"
+        echo
+        echo "Optionen:"
+        echo "  -i, --interactive   Interaktiven Dialog erzwingen"
+        echo "  -m, --mode          upload oder download (download = -R)"
+        echo "  -s, --server        iPerf3 Server (Host/IP)"
+        echo "  -p, --port          Einzelner Port (1-65535), sonst Auto-Scan"
+        echo "  -t, --time          Testdauer in Sekunden (Default: 10)"
+        echo "  -I, --ip-version    4 (Default), 6 oder auto"
+        echo
+        echo "Hinweis: Fuer den Timeout nutzt die Funktion timeout/gtimeout oder Perl alarm."
+        return 0
+        ;;
+      *)
+        echo "Unbekannte Option: $1"
+        echo "Nutze --help fuer die Syntax."
+        return 1
+        ;;
+    esac
+    shift
+  done
+
+  if [[ $use_interactive -eq 1 ]]; then
+    echo "=== iPerf3 Testrichtung ==="
+    echo "1) Senden (Upload - Standard)"
+    echo "2) Empfangen (Download - Reverse Mode)"
+    read -r "mode_choice?Waehle eine Option (1-2): "
+
+    case "$mode_choice" in
+      1) mode_args=() ;;
+      2) mode_args=(-R) ;;
+      *) echo "Ungueltige Auswahl. Abbruch."; return 1 ;;
+    esac
+
+    echo
+    echo "=== Oeffentlichen iPerf3-Server waehlen ==="
+    echo "1) Scaleway / Online.net (Frankreich, 100 Gbit/s)"
+    echo "2) Moji (Frankreich, 100 Gbit/s)"
+    echo "3) MilkyWan (Frankreich, 40 Gbit/s)"
+    echo "4) Bouygues Telecom (Paris BBR, 10 Gbit/s)"
+    echo "5) Serverius (Niederlande, 10 Gbit/s)"
+    echo "6) Eigener Server / IP eingeben"
+    read -r "server_choice?Waehle einen Server (1-6): "
+
+    case "$server_choice" in
+      1) server="ping.online.net"; ports_to_try=(5201 5200 5202 5203 5204 5205 5206 5207 5208 5209) ;;
+      2) server="iperf3.moji.fr"; ports_to_try=(5205 5200 5201 5202 5203 5204 5206 5210 5220) ;;
+      3) server="speedtest.milkywan.fr"; ports_to_try=(9200 9201 9202 9203 9204 9205 9210 9220) ;;
+      4) server="paris.bbr.iperf.bytel.fr"; ports_to_try=(9200 9201 9202 9203 9204 9205 9210 9220) ;;
+      5) server="speedtest.serverius.net"; ports_to_try=(5002) ;;
+      6)
+        read -r "server?Gib die Server-IP oder Domain ein: "
+        if [[ -z "$server" ]]; then
+          echo "Kein Server angegeben. Abbruch."
+          return 1
+        fi
+
+        read -r "custom_port?Port eingeben (Leer lassen fuer Auto-Scan): "
+        if [[ -n "$custom_port" ]]; then
+          if [[ "$custom_port" != <-> || "$custom_port" -lt 1 || "$custom_port" -gt 65535 ]]; then
+            echo "Ungueltiger Port: $custom_port"
+            return 1
+          fi
+          ports_to_try=("$custom_port")
+        else
+          ports_to_try=(5201 5202 5203 5204 5205)
+        fi
+        ;;
+      *) echo "Ungueltige Auswahl. Abbruch."; return 1 ;;
+    esac
+  else
+    case "${mode_param:l}" in
+      upload|up|send|senden) mode_choice="1"; mode_args=() ;;
+      download|down|receive|reverse|empfangen) mode_choice="2"; mode_args=(-R) ;;
+      *)
+        echo "Im nicht-interaktiven Modus ist --mode upload|download erforderlich."
+        return 1
+        ;;
+    esac
+
+    if [[ -z "$server_param" ]]; then
+      echo "Im nicht-interaktiven Modus ist --server HOST erforderlich."
+      return 1
+    fi
+    server="$server_param"
+
+    if [[ -n "$port_param" ]]; then
+      if [[ "$port_param" != <-> || "$port_param" -lt 1 || "$port_param" -gt 65535 ]]; then
+        echo "Ungueltiger Port: $port_param"
+        return 1
+      fi
+      ports_to_try=("$port_param")
+    else
+      ports_to_try=(5201 5202 5203 5204 5205)
+    fi
+
+    echo "Nicht-interaktiver Modus aktiv: mode=${mode_param:l}, server=$server, ports=${ports_to_try[*]}"
+  fi
+
+  if [[ -n "$test_seconds_param" ]]; then
+    if [[ "$test_seconds_param" != <-> || "$test_seconds_param" -lt 1 ]]; then
+      echo "Ungueltiger Wert fuer --time: $test_seconds_param (mindestens 1)"
+      return 1
+    fi
+    test_seconds=$test_seconds_param
+  fi
+
+  case "${ip_version_param:l}" in
+    auto|"") ip_args=() ;;
+    4|ipv4) ip_args=(-4) ;;
+    6|ipv6) ip_args=(-6) ;;
+    *)
+      echo "Ungueltiger Wert fuer --ip-version: $ip_version_param (erlaubt: auto|4|6)"
+      return 1
+      ;;
+  esac
+
+  if ! command -v iperf3 >/dev/null 2>&1; then
+    echo "Fehler: iperf3 ist nicht installiert."
+    if [[ "$(uname)" == "Darwin" ]]; then
+      echo "Tipp (macOS): brew install iperf3"
+    else
+      echo "Tipp (Debian/Ubuntu): sudo apt update && sudo apt install iperf3"
+    fi
+    return 1
+  fi
+
+  watchdog_seconds=$((test_seconds + watchdog_buffer_seconds))
+
+  err_file=$(mktemp)
+  out_file=$(mktemp)
+  trap '[[ -n "$iperf_pid" ]] && kill "$iperf_pid" 2>/dev/null; [[ -n "$err_file" ]] && rm -f "$err_file"; [[ -n "$out_file" ]] && rm -f "$out_file"' INT TERM EXIT
+
+  echo
+  echo "Starte Port-Rotation fuer $server..."
+  echo "----------------------------------------"
+
+  local port
+  local -i retry
+  local -i exit_code
+  local err_msg=""
+  local has_result_lines=""
+
+  for port in "${ports_to_try[@]}"; do
+    for ((retry=1; retry<=max_retries; retry++)); do
+      echo "Testen von $server auf Port $port (Versuch $retry/$max_retries)..."
+
+      : > "$err_file"
+      : > "$out_file"
+
+      if typeset -f iperf_timeout_cmd >/dev/null 2>&1; then
+        iperf_timeout_cmd "$watchdog_seconds" iperf3 --forceflush -c "$server" -p "$port" "${ip_args[@]}" "${mode_args[@]}" -t "$test_seconds" 2> "$err_file" > >(tee "$out_file")
+      elif command -v timeout >/dev/null 2>&1; then
+        timeout "$watchdog_seconds" iperf3 --forceflush -c "$server" -p "$port" "${ip_args[@]}" "${mode_args[@]}" -t "$test_seconds" 2> "$err_file" > >(tee "$out_file")
+      elif command -v gtimeout >/dev/null 2>&1; then
+        gtimeout "$watchdog_seconds" iperf3 --forceflush -c "$server" -p "$port" "${ip_args[@]}" "${mode_args[@]}" -t "$test_seconds" 2> "$err_file" > >(tee "$out_file")
+      else
+        perl -e 'alarm shift; exec @ARGV' "$watchdog_seconds" iperf3 --forceflush -c "$server" -p "$port" "${ip_args[@]}" "${mode_args[@]}" -t "$test_seconds" 2> "$err_file" > >(tee "$out_file")
+      fi
+      exit_code=$?
+      iperf_pid=""
+
+      if [[ $exit_code -eq 0 ]]; then
+        has_result_lines=$(grep -E 'sender|receiver' "$out_file" 2>/dev/null)
+        if [[ -n "$has_result_lines" ]]; then
+          printf '\n=== TEST ERFOLGREICH ===\n'
+          success=1
+          success_port=$port
+          break 2
+        fi
+
+        printf '%s\n\n' "-> Verbindung war zwar erfolgreich, aber es wurden keine Messdaten geliefert."
+        break
+      elif [[ $exit_code -eq 137 || $exit_code -eq 143 ]]; then
+        printf '%s\n\n' "-> Haenger/Timeout im Reverse-Modus (Datenpakete blockiert)."
+        break
+      else
+        err_msg=$(<"$err_file")
+        if [[ "$err_msg" == *busy* || "$err_msg" == *temporarily\ unavailable* ]]; then
+          printf '%s\n\n' "-> Server belegt. Warte ${delay_seconds}s..."
+          sleep "$delay_seconds"
+        elif [[ "$err_msg" == *Network\ is\ unreachable* ]]; then
+          network_unreachable_seen=1
+          if [[ "${ip_version_param:l}" == "auto" && $used_ipv4_fallback -eq 0 ]]; then
+            used_ipv4_fallback=1
+            ip_args=(-4)
+            echo "-> Keine Route erreichbar (oft IPv6-Problem). Wiederhole Test mit IPv4 (-4)."
+            continue
+          fi
+
+          printf '%s\n' "-> Keine Route zum Zielnetz (Network is unreachable)."
+          printf '%s\n\n' "   Pruefung: Internet/Route/DNS, optional --ip-version 4 testen."
+          break 2
+        else
+          printf '%s\n' "-> Port nicht erreichbar oder geschlossen."
+          if [[ -n "$err_msg" ]]; then
+            printf '%s\n\n' "   Ursache: $err_msg"
+          else
+            echo
+          fi
+          break
+        fi
+      fi
+    done
+  done
+
+  rm -f "$err_file" "$out_file"
+  trap - INT TERM EXIT
+
+  if [[ $success -ne 1 ]]; then
+    echo "Alle Ports waren erfolglos."
+    if [[ $network_unreachable_seen -eq 1 ]]; then
+      echo "Hinweis: Das ist eher ein Routing/Netzproblem als ein Port- oder Firewall-Thema am Zielserver."
+    elif [[ "$mode_choice" == "2" ]]; then
+      echo "Hinweis: Da der Download-Modus fehlschlug, blockiert vermutlich deine Router-Firewall (SPI/Flood-Protection) diesen Traffic."
+    fi
+    return 1
+  fi
+
+  echo "Erfolgreich ueber Port $success_port getestet."
+}
+
+# -------------------------------------------------------------------
+# quick help for network helper functions
+# -------------------------------------------------------------------
+network_help() {
+  echo "Network helper functions:"
+  printf "  %-36s %s\n" "myip" "Local interface IPv4/IPv6 addresses"
+  printf "  %-36s %s\n" "myip_public" "Public IP with provider fallback"
+  printf "  %-36s %s\n" "port_check HOST PORT" "TCP port reachability test"
+  printf "  %-36s %s\n" "whichport PORT [PROTO]" "Show process using local port"
+  printf "  %-36s %s\n" "dns_check HOST [DNS]" "DNS record overview (A/AAAA/CNAME/MX/NS)"
+  printf "  %-36s %s\n" "listening_ports" "Show listening TCP/UDP sockets"
+  printf "  %-36s %s\n" "iperf_test [options]" "Interactive/non-interactive iPerf3 test"
+}

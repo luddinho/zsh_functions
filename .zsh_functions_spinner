@@ -1,0 +1,127 @@
+#!/bin/bash
+
+# Spinner with percentage progress based on written file size.
+# Usage: spinner_progress_wait <pid> <file_path> <total_bytes> [message]
+spinner_progress_wait() {
+  emulate -L zsh
+  setopt localoptions noxtrace
+
+  local pid="$1"
+  local file_path="$2"
+  local total_bytes="$3"
+  local message="${4:-Working}"
+  local frames='|/-\\'
+  local frame
+  local current_bytes=0
+  local percent=0
+  local -i i=0
+  local -i exit_code=0
+
+  if [[ -z "$pid" || "$pid" != <-> ]]; then
+    echo "spinner_progress_wait: invalid pid"
+    return 1
+  fi
+
+  if [[ -z "$total_bytes" || "$total_bytes" != <-> || "$total_bytes" -le 0 ]]; then
+    echo "spinner_progress_wait: invalid total_bytes"
+    return 1
+  fi
+
+  if command -v tput >/dev/null 2>&1; then
+    tput civis 2>/dev/null
+  fi
+
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ -f "$file_path" ]]; then
+      if [[ "$(uname)" == "Darwin" ]]; then
+        current_bytes=$(stat -f%z "$file_path" 2>/dev/null || echo 0)
+      else
+        current_bytes=$(stat -c%s "$file_path" 2>/dev/null || echo 0)
+      fi
+    else
+      current_bytes=0
+    fi
+
+    if [[ -z "$current_bytes" || "$current_bytes" != <-> ]]; then
+      current_bytes=0
+    fi
+
+    if (( current_bytes > total_bytes )); then
+      current_bytes=$total_bytes
+    fi
+
+    percent=$(( (current_bytes * 100) / total_bytes ))
+    frame=${frames:$(( i % 4 )):1}
+    printf "\r[%s] %s %3d%% (%s/%s bytes)" "$frame" "$message" "$percent" "$current_bytes" "$total_bytes"
+    i=$((i + 1))
+    sleep 0.1
+  done
+
+  wait "$pid"
+  exit_code=$?
+
+  if [[ $exit_code -eq 0 ]]; then
+    printf "\r[OK] %s 100%% (%s/%s bytes)\n" "$message" "$total_bytes" "$total_bytes"
+  else
+    printf "\r[ERR] %s %3d%% (%s/%s bytes)\n" "$message" "$percent" "$current_bytes" "$total_bytes"
+  fi
+
+  if command -v tput >/dev/null 2>&1; then
+    tput cnorm 2>/dev/null
+  fi
+
+  return $exit_code
+}
+
+# Spinner for long-running background jobs.
+# Usage: spinner_wait <pid> [message]
+spinner_wait() {
+  emulate -L zsh
+  setopt localoptions noxtrace
+
+  local pid="$1"
+  local message="${2:-Working}"
+  local frames='|/-\\'
+  local -i i=0
+  local frame
+
+  if [[ -z "$pid" || "$pid" != <-> ]]; then
+    echo "spinner_wait: invalid pid"
+    return 1
+  fi
+
+  if command -v tput >/dev/null 2>&1; then
+    tput civis 2>/dev/null
+  fi
+
+  while kill -0 "$pid" 2>/dev/null; do
+    frame=${frames:$(( i % 4 )):1}
+    printf "\r[%s] %s" "$frame" "$message"
+    i=$((i + 1))
+    sleep 0.1
+  done
+
+  wait "$pid"
+  local exit_code=$?
+
+  if [[ $exit_code -eq 0 ]]; then
+    printf "\r[OK] %s\n" "$message"
+  else
+    printf "\r[ERR] %s\n" "$message"
+  fi
+
+  if command -v tput >/dev/null 2>&1; then
+    tput cnorm 2>/dev/null
+  fi
+
+  return $exit_code
+}
+
+# -------------------------------------------------------------------
+# show available spinner helper functions
+# -------------------------------------------------------------------
+spinner_help() {
+  echo "Spinner helper functions:"
+  printf "  %-36s %s\n" "spinner_progress_wait" "Spinner with percentage based on file growth"
+  printf "  %-36s %s\n" "spinner_wait" "Spinner for generic background jobs"
+}

@@ -1,0 +1,285 @@
+#!/bin/bash
+
+# Generic rsync helpers for SSH push/pull with optional key auto-discovery.
+#
+# Examples:
+#   rsync_push_remote ./data/ /backup/data --user alice --host example.org --port 22
+#   rsync_pull_remote /backup/data ./restore --user alice --host example.org
+#   rsync_push_remote ./src /srv/src --user alice --host example.org -- --delete --exclude .git
+
+# Auto-discover a suitable SSH identity file for a remote user/host pair.
+_rsync_pick_identity() {
+  emulate -L zsh
+  setopt localoptions noxtrace
+
+  local remote_user="$1"
+  local remote_host="$2"
+  local host_tag
+  local key
+  local -a keyfiles
+
+  host_tag="${remote_host//[^[:alnum:]]/_}"
+
+  key=$(find ~/.ssh/ -type f -name "${remote_user}_at_${host_tag}*_ed25519" ! -name "*.pub" -print -quit 2>/dev/null)
+  if [[ -z "$key" ]]; then
+    key=$(find ~/.ssh/ -type f -name "${remote_user}_at_${host_tag}*" ! -name "*.pub" -print -quit 2>/dev/null)
+  fi
+
+  if [[ -n "$key" ]]; then
+    echo "$key"
+    return 0
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo ""
+    return 0
+  fi
+
+  while IFS= read -r file; do
+    keyfiles+=("$file")
+  done < <(find ~/.ssh/ -type f \( -name '*id_*' -or -name '*.ed25519' -or -name '*.pem' \) ! -name '*.pub' 2>/dev/null)
+
+  if (( ${#keyfiles[@]} == 0 )); then
+    echo ""
+    return 0
+  fi
+
+  echo "No matching SSH key found for ${remote_user}@${remote_host}."
+  echo "Select a key or choose password authentication:"
+
+  local PS3="Select a key (1=password auth): "
+  local selected
+  select selected in "Use password authentication" "${keyfiles[@]}"; do
+    if [[ "$REPLY" == "1" ]]; then
+      echo ""
+      return 0
+    fi
+
+    if [[ -n "$selected" ]]; then
+      echo "$selected"
+      return 0
+    fi
+
+    echo "Invalid selection. Try again."
+  done
+}
+
+# Build the SSH command string with optional identity file.
+_rsync_build_ssh_cmd() {
+  emulate -L zsh
+  setopt localoptions noxtrace
+
+  local port="$1"
+  local identity="$2"
+
+  if [[ -n "$identity" ]]; then
+    echo "ssh -p $port -i $identity"
+  else
+    echo "ssh -p $port"
+  fi
+}
+
+# Push local source path to a remote destination via rsync over SSH.
+rsync_push_remote() {
+  emulate -L zsh
+  setopt localoptions noxtrace no_notify no_monitor
+
+  local source="$1"
+  local remote_path="$2"
+  shift 2 2>/dev/null || {
+    echo "Usage: rsync_push_remote <source> <remote_path> [--user USER] [--host HOST] [--port PORT] [--key KEYFILE] [--] [rsync options]"
+    return 1
+  }
+
+  local remote_user=""
+  local remote_host=""
+  local remote_port="22"
+  local remote_identity=""
+  local ssh_cmd=""
+  local -a rsync_default_options
+  local -a rsync_additional_options
+
+  rsync_default_options=(-a -h -v --stats --timeout=60 --partial --partial-dir=.rsync-partial --progress)
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --user)
+        shift
+        remote_user="$1"
+        ;;
+      --host)
+        shift
+        remote_host="$1"
+        ;;
+      --port)
+        shift
+        remote_port="$1"
+        ;;
+      --key)
+        shift
+        remote_identity="$1"
+        ;;
+      --)
+        shift
+        if [[ $# -gt 0 ]]; then
+          rsync_additional_options+=("$@")
+        fi
+        break
+        ;;
+      *)
+        rsync_additional_options+=("$1")
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -z "$source" || -z "$remote_path" ]]; then
+    echo "Usage: rsync_push_remote <source> <remote_path> [--user USER] [--host HOST] [--port PORT] [--key KEYFILE] [--] [rsync options]"
+    return 1
+  fi
+
+  if [[ -z "$remote_user" && -t 0 ]]; then
+    read -r "remote_user?Enter remote username: "
+  fi
+
+  if [[ -z "$remote_host" && -t 0 ]]; then
+    read -r "remote_host?Enter remote host (domain/IP): "
+  fi
+
+  if [[ -z "$remote_user" || -z "$remote_host" ]]; then
+    echo "Missing remote user or host. Use --user and --host."
+    return 1
+  fi
+
+  if [[ "$remote_port" != <-> || "$remote_port" -lt 1 || "$remote_port" -gt 65535 ]]; then
+    echo "Invalid port: $remote_port"
+    return 1
+  fi
+
+  if [[ -n "$remote_identity" && ! -f "$remote_identity" ]]; then
+    echo "SSH key file not found: $remote_identity"
+    return 1
+  fi
+
+  if [[ -z "$remote_identity" ]]; then
+    remote_identity="$(_rsync_pick_identity "$remote_user" "$remote_host")"
+  fi
+
+  ssh_cmd="$(_rsync_build_ssh_cmd "$remote_port" "$remote_identity")"
+
+  echo "Source: $source"
+  echo "Target: ${remote_user}@${remote_host}:$remote_path"
+  echo "SSH key: ${remote_identity:-password auth}"
+  echo "Rsync options: ${rsync_default_options[*]} ${rsync_additional_options[*]}"
+  echo
+  echo "Running: rsync ${rsync_default_options[*]} ${rsync_additional_options[*]} -e '$ssh_cmd' '$source' '${remote_user}@${remote_host}:$remote_path'"
+  echo
+
+  rsync "${rsync_default_options[@]}" "${rsync_additional_options[@]}" -e "$ssh_cmd" "$source" "${remote_user}@${remote_host}:$remote_path"
+}
+
+# Pull remote source path to a local destination via rsync over SSH.
+rsync_pull_remote() {
+  emulate -L zsh
+  setopt localoptions noxtrace no_notify no_monitor
+
+  local remote_path="$1"
+  local target="$2"
+  shift 2 2>/dev/null || {
+    echo "Usage: rsync_pull_remote <remote_path> <target> [--user USER] [--host HOST] [--port PORT] [--key KEYFILE] [--] [rsync options]"
+    return 1
+  }
+
+  local remote_user=""
+  local remote_host=""
+  local remote_port="22"
+  local remote_identity=""
+  local ssh_cmd=""
+  local -a rsync_default_options
+  local -a rsync_additional_options
+
+  rsync_default_options=(-a -h -v --stats --timeout=60 --partial --partial-dir=.rsync-partial --progress)
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --user)
+        shift
+        remote_user="$1"
+        ;;
+      --host)
+        shift
+        remote_host="$1"
+        ;;
+      --port)
+        shift
+        remote_port="$1"
+        ;;
+      --key)
+        shift
+        remote_identity="$1"
+        ;;
+      --)
+        shift
+        if [[ $# -gt 0 ]]; then
+          rsync_additional_options+=("$@")
+        fi
+        break
+        ;;
+      *)
+        rsync_additional_options+=("$1")
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -z "$remote_path" || -z "$target" ]]; then
+    echo "Usage: rsync_pull_remote <remote_path> <target> [--user USER] [--host HOST] [--port PORT] [--key KEYFILE] [--] [rsync options]"
+    return 1
+  fi
+
+  if [[ -z "$remote_user" && -t 0 ]]; then
+    read -r "remote_user?Enter remote username: "
+  fi
+
+  if [[ -z "$remote_host" && -t 0 ]]; then
+    read -r "remote_host?Enter remote host (domain/IP): "
+  fi
+
+  if [[ -z "$remote_user" || -z "$remote_host" ]]; then
+    echo "Missing remote user or host. Use --user and --host."
+    return 1
+  fi
+
+  if [[ "$remote_port" != <-> || "$remote_port" -lt 1 || "$remote_port" -gt 65535 ]]; then
+    echo "Invalid port: $remote_port"
+    return 1
+  fi
+
+  if [[ -n "$remote_identity" && ! -f "$remote_identity" ]]; then
+    echo "SSH key file not found: $remote_identity"
+    return 1
+  fi
+
+  if [[ -z "$remote_identity" ]]; then
+    remote_identity="$(_rsync_pick_identity "$remote_user" "$remote_host")"
+  fi
+
+  ssh_cmd="$(_rsync_build_ssh_cmd "$remote_port" "$remote_identity")"
+
+  echo "Source: ${remote_user}@${remote_host}:$remote_path"
+  echo "Target: $target"
+  echo "SSH key: ${remote_identity:-password auth}"
+  echo "Rsync options: ${rsync_default_options[*]} ${rsync_additional_options[*]}"
+  echo
+  echo "Running: rsync ${rsync_default_options[*]} ${rsync_additional_options[*]} -e '$ssh_cmd' '${remote_user}@${remote_host}:$remote_path' '$target'"
+  echo
+
+  rsync "${rsync_default_options[@]}" "${rsync_additional_options[@]}" -e "$ssh_cmd" "${remote_user}@${remote_host}:$remote_path" "$target"
+}
+
+# Show available rsync helper functions in this module.
+rsync_help() {
+  echo "Rsync helper functions:"
+  printf "  %-36s %s\n" "rsync_push_remote" "Push local source to remote path over SSH"
+  printf "  %-36s %s\n" "rsync_pull_remote" "Pull remote path to local target over SSH"
+}
