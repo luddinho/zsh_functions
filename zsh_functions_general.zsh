@@ -1289,6 +1289,10 @@ function pwgen {
   pwgen_bin=$(whence -p pwgen 2>/dev/null)
 
   if [[ "$1" == "-i" || "$1" == "--interactive" || "$1" == "-g" || "$1" == "--generate" ]]; then
+    if [[ -z "$pwgen_bin" ]]; then
+      echo "pwgen binary not found. Install with: brew install pwgen"
+      return 1
+    fi
     shift
     _pwgen_generate_interactive "$@"
     return $?
