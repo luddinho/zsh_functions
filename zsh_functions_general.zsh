@@ -686,7 +686,7 @@ function _pwgen_generate_interactive {
   if command -v python3 >/dev/null 2>&1; then
     has_python="1"
   fi
-  if command -v pwgen >/dev/null 2>&1; then
+  if (( $+commands[pwgen] )); then
     has_pwgen="1"
   fi
 
@@ -1127,6 +1127,7 @@ function _pwgen_generate_interactive {
     local pw_output
     if ! pw_output=$(command pwgen "${pwgen_opts[@]}" "$length" "$count" 2>/dev/null); then
       echo "pwgen generation failed."
+      echo "Tip: run 'command pwgen --help' to verify supported options on your system."
       return 1
     fi
 
@@ -1288,7 +1289,7 @@ function pwgen {
     return $?
   fi
 
-  if command -v pwgen >/dev/null 2>&1; then
+  if (( $+commands[pwgen] )); then
     command pwgen "$@"
     return $?
   fi
