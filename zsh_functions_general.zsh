@@ -1290,7 +1290,22 @@ function pwgen {
 
   if [[ "$1" == "-i" || "$1" == "--interactive" || "$1" == "-g" || "$1" == "--generate" ]]; then
     if [[ -z "$pwgen_bin" ]]; then
-      echo "pwgen binary not found. Install with: brew install pwgen"
+      echo "pwgen binary not found."
+      if [[ "$(uname)" == "Darwin" ]]; then
+        echo "Install with: brew install pwgen"
+      elif command -v apt >/dev/null 2>&1; then
+        echo "Install with: sudo apt install pwgen"
+      elif command -v dnf >/dev/null 2>&1; then
+        echo "Install with: sudo dnf install pwgen"
+      elif command -v yum >/dev/null 2>&1; then
+        echo "Install with: sudo yum install pwgen"
+      elif command -v pacman >/dev/null 2>&1; then
+        echo "Install with: sudo pacman -S pwgen"
+      elif command -v zypper >/dev/null 2>&1; then
+        echo "Install with: sudo zypper install pwgen"
+      else
+        echo "Install pwgen using your distribution's package manager."
+      fi
       return 1
     fi
     shift
@@ -1303,7 +1318,22 @@ function pwgen {
     return $?
   fi
 
-  echo "pwgen command not found. Install with: brew install pwgen"
+  echo "pwgen binary not found."
+  if [[ "$(uname)" == "Darwin" ]]; then
+    echo "Install with: brew install pwgen"
+  elif command -v apt >/dev/null 2>&1; then
+    echo "Install with: sudo apt install pwgen"
+  elif command -v dnf >/dev/null 2>&1; then
+    echo "Install with: sudo dnf install pwgen"
+  elif command -v yum >/dev/null 2>&1; then
+    echo "Install with: sudo yum install pwgen"
+  elif command -v pacman >/dev/null 2>&1; then
+    echo "Install with: sudo pacman -S pwgen"
+  elif command -v zypper >/dev/null 2>&1; then
+    echo "Install with: sudo zypper install pwgen"
+  else
+    echo "Install pwgen using your distribution's package manager."
+  fi
   return 1
 }
 
