@@ -683,10 +683,12 @@ function _pwgen_generate_interactive {
 
   local has_python="0"
   local has_pwgen="0"
+  local pwgen_bin=""
   if command -v python3 >/dev/null 2>&1; then
     has_python="1"
   fi
-  if (( $+commands[pwgen] )); then
+  pwgen_bin=$(whence -p pwgen 2>/dev/null)
+  if [[ -n "$pwgen_bin" ]]; then
     has_pwgen="1"
   fi
 
@@ -1125,9 +1127,9 @@ function _pwgen_generate_interactive {
     fi
 
     local pw_output
-    if ! pw_output=$(command pwgen "${pwgen_opts[@]}" "$length" "$count" 2>/dev/null); then
+    if ! pw_output=$("$pwgen_bin" "${pwgen_opts[@]}" "$length" "$count" 2>/dev/null); then
       echo "pwgen generation failed."
-      echo "Tip: run 'command pwgen --help' to verify supported options on your system."
+      echo "Tip: run '$pwgen_bin --help' to verify supported options on your system."
       return 1
     fi
 
@@ -1283,14 +1285,17 @@ PY
 function pwgen {
   emulate -L zsh
 
+  local pwgen_bin
+  pwgen_bin=$(whence -p pwgen 2>/dev/null)
+
   if [[ "$1" == "-i" || "$1" == "--interactive" || "$1" == "-g" || "$1" == "--generate" ]]; then
     shift
     _pwgen_generate_interactive "$@"
     return $?
   fi
 
-  if (( $+commands[pwgen] )); then
-    command pwgen "$@"
+  if [[ -n "$pwgen_bin" ]]; then
+    "$pwgen_bin" "$@"
     return $?
   fi
 
