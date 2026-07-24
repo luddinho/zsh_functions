@@ -486,6 +486,817 @@ function calc {
   perl -e 'my $e = shift; my $r = eval $e; die $@ if $@; print "$r\n";' "$expr"
 }
 
+# Entropy-focused generator mode for `pwgen -i`.
+function _pwgen_entropy_mode {
+  emulate -L zsh
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Entropy mode requires python3."
+    return 1
+  fi
+
+  local answer
+  local entropy_bits="128"
+  local max_length="20"
+  local count="1"
+  local special_set='!@#$%^&*()-_=+[]{}:,.?/~'
+  local copy_first="0"
+
+  echo "Entropy-only mode"
+
+  while true; do
+    read "answer?Requested entropy in bits (example 128): "
+    answer="${answer:-$entropy_bits}"
+    if [[ "$answer" == <-> && "$answer" -ge 1 ]]; then
+      entropy_bits="$answer"
+      break
+    fi
+    echo "Please enter a whole number >= 1."
+  done
+
+  while true; do
+    read "answer?Maximum password length allowed: "
+    answer="${answer:-$max_length}"
+    if [[ "$answer" == <-> && "$answer" -ge 1 ]]; then
+      max_length="$answer"
+      break
+    fi
+    echo "Please enter a whole number >= 1."
+  done
+
+  while true; do
+    read "answer?How many passwords to generate (default ${count}): "
+    answer="${answer:-$count}"
+    if [[ "$answer" == <-> && "$answer" -ge 1 && "$answer" -le 1000 ]]; then
+      count="$answer"
+      break
+    fi
+    echo "Please enter a number between 1 and 1000."
+  done
+
+  if [[ "$(uname)" == "Darwin" ]] && command -v pbcopy >/dev/null 2>&1; then
+    while true; do
+      read "answer?Copy first generated password to clipboard? [y/N]: "
+      case "${answer:l}" in
+        "") break ;;
+        y|yes) copy_first="1"; break ;;
+        n|no) copy_first="0"; break ;;
+        *) echo "Please answer y or n." ;;
+      esac
+    done
+  fi
+
+  local filtered_special="${special_set//[O0Il1|]/}"
+  local -i pool_size=$((25 + 24 + 8 + ${#filtered_special}))
+  if (( pool_size < 2 )); then
+    echo "Final character pool is too small."
+    return 1
+  fi
+
+  local bits_per_char required_length max_entropy
+  bits_per_char=$(awk -v pool="$pool_size" 'BEGIN { printf "%.3f", log(pool)/log(2) }')
+  required_length=$(awk -v min="$entropy_bits" -v pool="$pool_size" 'BEGIN { bpc=log(pool)/log(2); req=min/bpc; if (req==int(req)) print int(req); else print int(req)+1 }')
+
+  while true; do
+    max_entropy=$(awk -v l="$max_length" -v pool="$pool_size" 'BEGIN { printf "%.1f", l*(log(pool)/log(2)) }')
+    if (( required_length <= max_length )); then
+      break
+    fi
+
+    echo "Backend: python (entropy mode)"
+    echo "Pool size: ${pool_size} characters"
+    echo "Entropy per character: ${bits_per_char} bits"
+    echo "Requested minimum entropy: ${entropy_bits} bits"
+    echo "Maximum allowed length: ${max_length}"
+    echo "Not possible within ${max_length} characters."
+    echo "Estimated entropy at max length: ${max_entropy} bits"
+    echo "Minimum needed length: ${required_length}"
+
+    while true; do
+      read "answer?Proceed with minimum needed length ${required_length}? [Y/n/new]: "
+      case "${answer:l}" in
+        ""|y|yes)
+          max_length="$required_length"
+          break
+          ;;
+        n|no)
+          echo "Cancelled."
+          return 1
+          ;;
+        new)
+          while true; do
+            read "answer?Enter new maximum password length: "
+            if [[ "$answer" == <-> && "$answer" -ge 1 ]]; then
+              max_length="$answer"
+              break
+            fi
+            echo "Please enter a whole number >= 1."
+          done
+          break
+          ;;
+        *)
+          echo "Please answer y, n, or new."
+          ;;
+      esac
+    done
+  done
+
+  PW_ENTROPY_BITS="$entropy_bits" \
+  PW_MAX_LENGTH="$max_length" \
+  PW_USED_LENGTH="$required_length" \
+  PW_COUNT="$count" \
+  PW_COPY_FIRST="$copy_first" \
+  PW_SPECIAL_SET="$special_set" \
+  python3 - <<'PY'
+import math
+import os
+import secrets
+import string
+import subprocess
+import sys
+
+
+def b(name: str) -> bool:
+    return os.environ.get(name, "0") == "1"
+
+
+target_entropy = int(os.environ["PW_ENTROPY_BITS"])
+max_length = int(os.environ["PW_MAX_LENGTH"])
+used_length = int(os.environ["PW_USED_LENGTH"])
+count = int(os.environ["PW_COUNT"])
+copy_first = b("PW_COPY_FIRST")
+special_set = os.environ.get("PW_SPECIAL_SET", "")
+
+groups = [string.ascii_lowercase, string.ascii_uppercase, string.digits, special_set]
+ambiguous = set("O0Il1|")
+groups = ["".join(ch for ch in grp if ch not in ambiguous) for grp in groups]
+groups = [grp for grp in groups if grp]
+
+pool = "".join(dict.fromkeys("".join(groups)))
+if not pool:
+    print("Final character pool is empty.", file=sys.stderr)
+    sys.exit(1)
+
+bits_per_char = math.log2(len(pool))
+max_entropy = max_length * bits_per_char
+
+print("Backend: python (entropy mode)")
+print(f"Pool size: {len(pool)} characters")
+print(f"Entropy per character: {bits_per_char:.3f} bits")
+print(f"Requested minimum entropy: {target_entropy} bits")
+print(f"Maximum allowed length: {max_length}")
+print(f"Estimated entropy at max length: {max_entropy:.1f} bits")
+
+
+def gen_password() -> str:
+    chars = [secrets.choice(grp) for grp in groups]
+    chars += [secrets.choice(pool) for _ in range(used_length - len(chars))]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
+
+
+passwords = [gen_password() for _ in range(count)]
+entropy_bits = used_length * bits_per_char
+print(f"Used length: {used_length}")
+print(f"Estimated entropy: {entropy_bits:.1f} bits per password")
+for idx, pwd in enumerate(passwords, start=1):
+    print(f"{idx:>3}: {pwd}")
+
+if copy_first and passwords:
+    try:
+        subprocess.run(["pbcopy"], input=passwords[0], text=True, check=True)
+        print("First password copied to clipboard.")
+    except Exception:
+        print("Could not copy to clipboard.", file=sys.stderr)
+PY
+}
+
+# Interactive password generator helper used by `pwgen -i`.
+function _pwgen_generate_interactive {
+  emulate -L zsh
+
+  local force_entropy_mode="0"
+  if [[ "$1" == "-e" || "$1" == "--entropy-mode" ]]; then
+    force_entropy_mode="1"
+    shift
+  fi
+
+  local has_python="0"
+  local has_pwgen="0"
+  if command -v python3 >/dev/null 2>&1; then
+    has_python="1"
+  fi
+  if command -v pwgen >/dev/null 2>&1; then
+    has_pwgen="1"
+  fi
+
+  if [[ "$has_python" == "0" && "$has_pwgen" == "0" ]]; then
+    echo "pwgen -i: requires either pwgen or python3 to be installed."
+    return 1
+  fi
+
+  local profile="1"
+  local length="16"
+  local count="1"
+  local only_numbers="0"
+  local use_lower="1"
+  local use_upper="1"
+  local use_digits="1"
+  local use_special="1"
+  local special_set='!@#$%^&*()-_=+[]{}:,.?/~'
+  local custom_special_set=""
+  local exclude_ambiguous="1"
+  local ensure_each_group="1"
+  local min_entropy_bits="0"
+  local copy_first="0"
+  local backend_choice="auto"
+  local answer
+  local is_custom_profile="0"
+
+  if [[ "$force_entropy_mode" == "1" ]]; then
+    _pwgen_entropy_mode
+    return $?
+  fi
+
+  while true; do
+    read "answer?Mode: [1] Full wizard [2] Entropy-only (default 1): "
+    case "$answer" in
+      ""|1)
+        break
+        ;;
+      2)
+        _pwgen_entropy_mode
+        return $?
+        ;;
+      *)
+        echo "Please enter 1 or 2."
+        ;;
+    esac
+  done
+
+  echo "Password generator profiles:"
+  echo "  1) General use (16, upper+lower+digits+special)"
+  echo "  2) Compatible (16, upper+lower+digits, no special)"
+  echo "  3) PIN/OTP style (6, numbers only)"
+  echo "  4) Wi-Fi key (20, upper+lower+digits+special)"
+  echo "  5) Custom"
+  read "profile?Choose profile [1-5] (default 1): "
+  profile="${profile:-1}"
+
+  local profile_name="Custom"
+
+  case "$profile" in
+    1)
+      profile_name="General use"
+      length="16"; only_numbers="0"; use_lower="1"; use_upper="1"; use_digits="1"; use_special="1"
+      ;;
+    2)
+      profile_name="Compatible"
+      length="16"; only_numbers="0"; use_lower="1"; use_upper="1"; use_digits="1"; use_special="0"
+      ;;
+    3)
+      profile_name="PIN/OTP style"
+      length="6"; only_numbers="1"; use_lower="0"; use_upper="0"; use_digits="1"; use_special="0"
+      ;;
+    4)
+      profile_name="Wi-Fi key"
+      length="20"; only_numbers="0"; use_lower="1"; use_upper="1"; use_digits="1"; use_special="1"
+      ;;
+    5)
+      profile_name="Custom"
+      is_custom_profile="1"
+      ;;
+    *)
+      echo "Invalid profile."
+      return 1
+      ;;
+  esac
+
+  echo "Selected profile: ${profile_name}"
+  echo "Press Enter to keep each default value."
+  if [[ "$is_custom_profile" == "0" ]]; then
+    echo "Preset profile selected: character sets are fixed by profile. Use profile 5 (Custom) to change them."
+  fi
+
+  while true; do
+    read "answer?Password length (default ${length}): "
+    answer="${answer:-$length}"
+    if [[ "$answer" == <-> && "$answer" -ge 4 ]]; then
+      length="$answer"
+      break
+    fi
+    echo "Please enter a number >= 4."
+  done
+
+  while true; do
+    read "answer?How many passwords to generate (default ${count}): "
+    answer="${answer:-$count}"
+    if [[ "$answer" == <-> && "$answer" -ge 1 && "$answer" -le 1000 ]]; then
+      count="$answer"
+      break
+    fi
+    echo "Please enter a number between 1 and 1000."
+  done
+
+  if [[ "$is_custom_profile" == "1" ]]; then
+    while true; do
+      if [[ "$only_numbers" == "1" ]]; then
+        read "answer?Numbers only? [Y/n]: "
+      else
+        read "answer?Numbers only? [y/N]: "
+      fi
+
+      case "${answer:l}" in
+        "")
+          break
+          ;;
+        y|yes)
+          only_numbers="1"
+          break
+          ;;
+        n|no)
+          only_numbers="0"
+          break
+          ;;
+        *)
+          echo "Please answer y or n."
+          ;;
+      esac
+    done
+
+    if [[ "$only_numbers" == "1" ]]; then
+      use_lower="0"
+      use_upper="0"
+      use_digits="1"
+      use_special="0"
+      custom_special_set=""
+      echo "Numbers-only enabled: lowercase/uppercase/special disabled, digits enabled."
+    fi
+
+    if [[ "$only_numbers" == "0" ]]; then
+      while true; do
+        if [[ "$use_lower" == "1" ]]; then
+          read "answer?Include lowercase letters? [Y/n]: "
+        else
+          read "answer?Include lowercase letters? [y/N]: "
+        fi
+        case "${answer:l}" in
+          "") break ;;
+          y|yes) use_lower="1"; break ;;
+          n|no) use_lower="0"; break ;;
+          *) echo "Please answer y or n." ;;
+        esac
+      done
+
+      while true; do
+        if [[ "$use_upper" == "1" ]]; then
+          read "answer?Include uppercase letters? [Y/n]: "
+        else
+          read "answer?Include uppercase letters? [y/N]: "
+        fi
+        case "${answer:l}" in
+          "") break ;;
+          y|yes) use_upper="1"; break ;;
+          n|no) use_upper="0"; break ;;
+          *) echo "Please answer y or n." ;;
+        esac
+      done
+
+      while true; do
+        if [[ "$use_digits" == "1" ]]; then
+          read "answer?Include digits? [Y/n]: "
+        else
+          read "answer?Include digits? [y/N]: "
+        fi
+        case "${answer:l}" in
+          "") break ;;
+          y|yes) use_digits="1"; break ;;
+          n|no) use_digits="0"; break ;;
+          *) echo "Please answer y or n." ;;
+        esac
+      done
+
+      while true; do
+        if [[ "$use_special" == "1" ]]; then
+          read "answer?Include special characters? [Y/n]: "
+        else
+          read "answer?Include special characters? [y/N]: "
+        fi
+        case "${answer:l}" in
+          "")
+            break
+            ;;
+          y|yes)
+            use_special="1"
+            break
+            ;;
+          n|no)
+            use_special="0"
+            break
+            ;;
+          *)
+            echo "Please answer y or n."
+            ;;
+        esac
+      done
+
+      if [[ "$use_special" == "1" ]]; then
+        read "answer?Use only specific special characters (empty = default set): "
+        if [[ -n "$answer" ]]; then
+          custom_special_set="$answer"
+        fi
+      else
+        custom_special_set=""
+      fi
+    fi
+  fi
+
+  if [[ "$use_lower" == "0" && "$use_upper" == "0" && "$use_digits" == "0" && "$use_special" == "0" ]]; then
+    echo "No character groups selected."
+    return 1
+  fi
+
+  while true; do
+    if [[ "$exclude_ambiguous" == "1" ]]; then
+      read "answer?Exclude ambiguous characters (O,0,l,1,|,I)? [Y/n]: "
+    else
+      read "answer?Exclude ambiguous characters (O,0,l,1,|,I)? [y/N]: "
+    fi
+    case "${answer:l}" in
+      "") break ;;
+      y|yes) exclude_ambiguous="1"; break ;;
+      n|no) exclude_ambiguous="0"; break ;;
+      *) echo "Please answer y or n." ;;
+    esac
+  done
+
+  local -i selected_groups=0
+  [[ "$use_lower" == "1" ]] && ((selected_groups++))
+  [[ "$use_upper" == "1" ]] && ((selected_groups++))
+  [[ "$use_digits" == "1" ]] && ((selected_groups++))
+  [[ "$use_special" == "1" ]] && ((selected_groups++))
+
+  if (( selected_groups > 1 )); then
+    while true; do
+      if [[ "$ensure_each_group" == "1" ]]; then
+        read "answer?Ensure at least one character from each selected group? [Y/n]: "
+      else
+        read "answer?Ensure at least one character from each selected group? [y/N]: "
+      fi
+      case "${answer:l}" in
+        "") break ;;
+        y|yes) ensure_each_group="1"; break ;;
+        n|no) ensure_each_group="0"; break ;;
+        *) echo "Please answer y or n." ;;
+      esac
+    done
+  else
+    ensure_each_group="0"
+  fi
+
+  while true; do
+    read "answer?Minimum entropy in bits (0 to disable, example 128): "
+    answer="${answer:-0}"
+    if [[ "$answer" == <-> ]]; then
+      min_entropy_bits="$answer"
+      break
+    fi
+    echo "Please enter a whole number >= 0."
+  done
+
+  while true; do
+    read "answer?Backend [a]uto/[p]wgen/[py]thon (default auto): "
+    case "${answer:l}" in
+      ""|a|auto)
+        backend_choice="auto"
+        break
+        ;;
+      p|pwgen)
+        backend_choice="pwgen"
+        break
+        ;;
+      py|python)
+        backend_choice="python"
+        break
+        ;;
+      *)
+        echo "Please enter auto, pwgen or python."
+        ;;
+    esac
+  done
+
+  if [[ "$(uname)" == "Darwin" ]] && command -v pbcopy >/dev/null 2>&1; then
+    while true; do
+      if [[ "$copy_first" == "1" ]]; then
+        read "answer?Copy first generated password to clipboard? [Y/n]: "
+      else
+        read "answer?Copy first generated password to clipboard? [y/N]: "
+      fi
+      case "${answer:l}" in
+        "") break ;;
+        y|yes) copy_first="1"; break ;;
+        n|no) copy_first="0"; break ;;
+        *) echo "Please answer y or n." ;;
+      esac
+    done
+  fi
+
+  if [[ -n "$custom_special_set" ]]; then
+    special_set="$custom_special_set"
+  fi
+
+  local backend="python"
+  local pwgen_compatible="1"
+  local -a incompat_reasons
+
+  if [[ "$only_numbers" == "1" ]]; then
+    pwgen_compatible="0"
+    incompat_reasons+=("numbers-only mode")
+  fi
+  if [[ -n "$custom_special_set" ]]; then
+    pwgen_compatible="0"
+    incompat_reasons+=("custom special-character set")
+  fi
+  case "$backend_choice" in
+    python)
+      backend="python"
+      ;;
+    pwgen)
+      if [[ "$has_pwgen" == "1" && "$pwgen_compatible" == "1" ]]; then
+        backend="pwgen"
+      else
+        backend="python"
+        echo "Requested pwgen backend is not available for current options; using python backend."
+        if (( ${#incompat_reasons[@]} > 0 )); then
+          echo "Reason: ${incompat_reasons[*]}"
+        fi
+      fi
+      ;;
+    auto)
+      if [[ "$has_pwgen" == "1" && "$pwgen_compatible" == "1" ]]; then
+        backend="pwgen"
+      else
+        backend="python"
+      fi
+      ;;
+  esac
+
+  if [[ "$backend" == "python" && "$has_python" != "1" ]]; then
+    echo "python3 is required for selected options."
+    if [[ "$has_pwgen" == "1" ]]; then
+      echo "Tip: choose backend=pwgen and avoid advanced-only options."
+    fi
+    return 1
+  fi
+
+  if [[ "$backend" == "pwgen" ]]; then
+    local -a pwgen_opts
+    local remove_chars=""
+    local lower_chars="abcdefghijklmnopqrstuvwxyz"
+
+    pwgen_opts=(-s -1)
+    if [[ "$use_upper" == "1" ]]; then
+      pwgen_opts+=(-c)
+    else
+      pwgen_opts+=(-A)
+    fi
+
+    if [[ "$use_digits" == "1" ]]; then
+      pwgen_opts+=(-n)
+    else
+      pwgen_opts+=(-0)
+    fi
+
+    if [[ "$use_special" == "1" ]]; then
+      pwgen_opts+=(-y)
+    fi
+
+    if [[ "$exclude_ambiguous" == "1" ]]; then
+      pwgen_opts+=(-B)
+    fi
+
+    if [[ "$use_lower" == "0" ]]; then
+      remove_chars+="$lower_chars"
+    fi
+
+    if [[ -n "$remove_chars" ]]; then
+      pwgen_opts+=(-r "$remove_chars")
+    fi
+
+    local -i pool_size=0
+    if [[ "$use_lower" == "1" ]]; then
+      (( pool_size += 26 ))
+      if [[ "$exclude_ambiguous" == "1" ]]; then
+        (( pool_size -= 1 ))
+      fi
+    fi
+    if [[ "$use_upper" == "1" ]]; then
+      (( pool_size += 26 ))
+      if [[ "$exclude_ambiguous" == "1" ]]; then
+        (( pool_size -= 2 ))
+      fi
+    fi
+    if [[ "$use_digits" == "1" ]]; then
+      (( pool_size += 10 ))
+      if [[ "$exclude_ambiguous" == "1" ]]; then
+        (( pool_size -= 2 ))
+      fi
+    fi
+    if [[ "$use_special" == "1" ]]; then
+      (( pool_size += ${#special_set} ))
+    fi
+
+    if (( pool_size < 2 )); then
+      echo "Final character pool is too small for pwgen backend."
+      return 1
+    fi
+
+    local adjusted_length="$length"
+    if [[ "$min_entropy_bits" != "0" ]]; then
+      adjusted_length=$(awk -v min="$min_entropy_bits" -v pool="$pool_size" 'BEGIN { bpc=log(pool)/log(2); req=min/bpc; if (req==int(req)) print int(req); else print int(req)+1 }')
+      if [[ "$adjusted_length" != <-> ]]; then
+        echo "Could not compute entropy-adjusted length."
+        return 1
+      fi
+      if (( adjusted_length < length )); then
+        adjusted_length="$length"
+      fi
+      length="$adjusted_length"
+    fi
+
+    local pw_output
+    if ! pw_output=$(command pwgen "${pwgen_opts[@]}" "$length" "$count" 2>/dev/null); then
+      echo "pwgen generation failed."
+      return 1
+    fi
+
+    local entropy_bits
+    entropy_bits=$(awk -v l="$length" -v pool="$pool_size" 'BEGIN { printf "%.1f", l*(log(pool)/log(2)) }')
+
+    echo "Backend: pwgen"
+    if [[ "$ensure_each_group" == "1" ]]; then
+      echo "Note: pwgen applies group requirements best-effort (strict guarantees may differ from python backend)."
+    fi
+    echo "Pool size: ${pool_size} characters"
+    if [[ "$min_entropy_bits" != "0" ]]; then
+      echo "Requested minimum entropy: ${min_entropy_bits} bits"
+      echo "Adjusted password length: ${length}"
+    fi
+    echo "Estimated entropy: ${entropy_bits} bits per password"
+
+    local idx=1
+    local first_password=""
+    local line
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      if [[ -z "$first_password" ]]; then
+        first_password="$line"
+      fi
+      printf "%3d: %s\n" "$idx" "$line"
+      ((idx++))
+    done <<< "$pw_output"
+
+    if [[ "$copy_first" == "1" && -n "$first_password" ]]; then
+      printf "%s" "$first_password" | pbcopy
+      echo "First password copied to clipboard."
+    fi
+
+    return 0
+  fi
+
+  PW_LENGTH="$length" \
+  PW_COUNT="$count" \
+  PW_LOWER="$use_lower" \
+  PW_UPPER="$use_upper" \
+  PW_DIGITS="$use_digits" \
+  PW_SPECIAL="$use_special" \
+  PW_ONLY_NUMBERS="$only_numbers" \
+  PW_SPECIAL_SET="$special_set" \
+  PW_EXCLUDE_AMBIGUOUS="$exclude_ambiguous" \
+  PW_ENSURE_EACH="$ensure_each_group" \
+  PW_MIN_ENTROPY="$min_entropy_bits" \
+  PW_COPY_FIRST="$copy_first" \
+  python3 - <<'PY'
+import math
+import os
+import secrets
+import string
+import subprocess
+import sys
+
+
+def b(name: str) -> bool:
+    return os.environ.get(name, "0") == "1"
+
+
+length = int(os.environ["PW_LENGTH"])
+count = int(os.environ["PW_COUNT"])
+use_lower = b("PW_LOWER")
+use_upper = b("PW_UPPER")
+use_digits = b("PW_DIGITS")
+use_special = b("PW_SPECIAL")
+only_numbers = b("PW_ONLY_NUMBERS")
+special_set = os.environ.get("PW_SPECIAL_SET", "")
+exclude_ambiguous = b("PW_EXCLUDE_AMBIGUOUS")
+ensure_each = b("PW_ENSURE_EACH")
+min_entropy_bits = int(os.environ.get("PW_MIN_ENTROPY", "0"))
+copy_first = b("PW_COPY_FIRST")
+
+groups = []
+if only_numbers:
+    groups.append(string.digits)
+else:
+    if use_lower:
+        groups.append(string.ascii_lowercase)
+    if use_upper:
+        groups.append(string.ascii_uppercase)
+    if use_digits:
+        groups.append(string.digits)
+    if use_special:
+        groups.append(special_set)
+
+if not groups:
+    print("No character groups selected.", file=sys.stderr)
+    sys.exit(1)
+
+ambiguous = set("O0Il1|")
+if exclude_ambiguous:
+    groups = ["".join(ch for ch in grp if ch not in ambiguous) for grp in groups]
+    groups = [grp for grp in groups if grp]
+
+if not groups:
+    print("Character set became empty after filtering ambiguous characters.", file=sys.stderr)
+    sys.exit(1)
+
+if ensure_each and length < len(groups):
+    print(f"Length {length} is too short for {len(groups)} required groups.", file=sys.stderr)
+    sys.exit(1)
+
+pool = "".join(dict.fromkeys("".join(groups)))
+if not pool:
+    print("Final character pool is empty.", file=sys.stderr)
+    sys.exit(1)
+
+bits_per_char = math.log2(len(pool))
+if bits_per_char <= 0:
+  print("Character pool is too small to provide entropy.", file=sys.stderr)
+  sys.exit(1)
+
+if min_entropy_bits > 0:
+  required_length = math.ceil(min_entropy_bits / bits_per_char)
+  if required_length > length:
+    length = required_length
+
+
+def gen_password() -> str:
+    if ensure_each:
+        chars = [secrets.choice(grp) for grp in groups]
+        chars += [secrets.choice(pool) for _ in range(length - len(chars))]
+        secrets.SystemRandom().shuffle(chars)
+        return "".join(chars)
+    return "".join(secrets.choice(pool) for _ in range(length))
+
+
+passwords = [gen_password() for _ in range(count)]
+entropy_bits = length * math.log2(len(pool))
+
+print("Backend: python")
+print(f"Pool size: {len(pool)} characters")
+if min_entropy_bits > 0:
+  print(f"Requested minimum entropy: {min_entropy_bits} bits")
+  print(f"Adjusted password length: {length}")
+print(f"Estimated entropy: {entropy_bits:.1f} bits per password")
+for idx, pwd in enumerate(passwords, start=1):
+    print(f"{idx:>3}: {pwd}")
+
+if copy_first and passwords:
+    try:
+        subprocess.run(["pbcopy"], input=passwords[0], text=True, check=True)
+        print("First password copied to clipboard.")
+    except Exception:
+        print("Could not copy to clipboard.", file=sys.stderr)
+PY
+}
+
+# Keep system pwgen behavior; use `pwgen -i` for interactive generation.
+function pwgen {
+  emulate -L zsh
+
+  if [[ "$1" == "-i" || "$1" == "--interactive" || "$1" == "-g" || "$1" == "--generate" ]]; then
+    shift
+    _pwgen_generate_interactive "$@"
+    return $?
+  fi
+
+  if command -v pwgen >/dev/null 2>&1; then
+    command pwgen "$@"
+    return $?
+  fi
+
+  echo "pwgen command not found. Install with: brew install pwgen"
+  return 1
+}
+
 # Overview of general helper functions.
 function general_help {
   echo "General helper functions:"
@@ -504,4 +1315,5 @@ function general_help {
   printf "  %-36s %s\n" "cleanup_dsstore [PATH]" "Delete .DS_Store files recursively"
   printf "  %-36s %s\n" "weather [LOCATION]" "Show weather forecast"
   printf "  %-36s %s\n" "calc EXPRESSION" "Evaluate expression"
+  printf "  %-36s %s\n" "pwgen -i [-e]" "Interactive generator (full or entropy-only mode)"
 }
