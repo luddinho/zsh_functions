@@ -109,7 +109,26 @@ function cl {
 # A helper where to start cleaning when the disk is full.
 # Use it with the syntax whatsize directory or just whatsize to list the / directory sizes.
 function whatsize {
-    du -h -x -P -t 1 -d 1 --exclude=/{proc,sys,dev,run} --exclude='*/#snapshot' --exclude='#snapshot' ${1:-/} 2>/dev/null | sort -hr
+    emulate -L zsh
+
+    local root="${1:-/}"
+    if [[ ! -d "$root" ]]; then
+      echo "Directory not found: $root"
+      return 1
+    fi
+
+    # GNU du (Linux)
+    if du --version >/dev/null 2>&1; then
+      du -h -x -P -t 1 -d 1 \
+        --exclude=/{proc,sys,dev,run} \
+        --exclude='*/#snapshot' \
+        --exclude='#snapshot' \
+        "$root" 2>/dev/null | sort -hr
+      return $?
+    fi
+
+    # BSD du (macOS)
+    du -h -d 1 "$root" 2>/dev/null | sort -hr
 }
 
 
@@ -346,27 +365,55 @@ function urldecode {
   perl -MURI::Escape -e 'print uri_unescape($ARGV[0]), "\n"' "$1"
 }
 
-# Show human-readable size for files/directories.
+# Show largest files recursively.
 function fsize {
   emulate -L zsh
 
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    _general_usage "fsize [path ...]" "Shows human-readable size for each path (default: current directory)."
+    _general_usage "fsize [path] [limit]" "Recursively lists largest files first (default: current directory, 20 results)."
     return 0
   fi
 
-  if [[ $# -eq 0 ]]; then
-    set -- .
+  local root="${1:-.}"
+  local limit="${2:-20}"
+
+  if [[ ! -e "$root" ]]; then
+    echo "Path not found: $root"
+    return 1
   fi
 
-  local p
-  for p in "$@"; do
-    if [[ ! -e "$p" ]]; then
-      echo "Not found: $p"
-      continue
-    fi
-    du -sh "$p" 2>/dev/null
-  done
+  if [[ "$limit" != <-> || "$limit" -lt 1 ]]; then
+    echo "Limit must be a whole number >= 1."
+    return 1
+  fi
+
+  if [[ -f "$root" ]]; then
+    du -kh "$root" 2>/dev/null
+    return $?
+  else
+    find "$root" -type f -exec du -k {} + 2>/dev/null \
+      | sort -nr \
+      | head -n "$limit" \
+      | awk '
+          function human(kib, units, i, bytes) {
+            split("B KiB MiB GiB TiB PiB", units, " ")
+            bytes = kib * 1024
+            i = 1
+            while (bytes >= 1024 && i < 6) {
+              bytes /= 1024
+              i++
+            }
+            return sprintf("%.2f %s", bytes, units[i])
+          }
+          {
+            size = $1
+            $1 = ""
+            sub(/^\s+/, "", $0)
+            printf "%10s  %s\n", human(size), $0
+          }
+        '
+    return $?
+  fi
 }
 
 # One-screen system summary.
@@ -1349,7 +1396,7 @@ function general_help {
   printf "  %-36s %s\n" "json_pretty [FILE]" "Pretty-print JSON"
   printf "  %-36s %s\n" "urlencode TEXT" "URL-encode text"
   printf "  %-36s %s\n" "urldecode TEXT" "URL-decode text"
-  printf "  %-36s %s\n" "fsize [PATH ...]" "Show file or directory size"
+  printf "  %-36s %s\n" "fsize [PATH] [LIMIT]" "List largest files recursively"
   printf "  %-36s %s\n" "sysinfo_short" "Print compact system summary"
   printf "  %-36s %s\n" "psg PATTERN" "Search processes"
   printf "  %-36s %s\n" "cleanup_dsstore [PATH]" "Delete .DS_Store files recursively"
