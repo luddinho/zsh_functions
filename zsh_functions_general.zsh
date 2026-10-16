@@ -335,34 +335,38 @@ function json_pretty {
 function urlencode {
   emulate -L zsh
 
-  if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
+  if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
     _general_usage "urlencode <text>" "Encodes text for URL usage."
     return 0
   fi
 
+  local input="$*"
+
   if command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
+    python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$input"
     return $?
   fi
 
-  perl -MURI::Escape -e 'print uri_escape($ARGV[0]), "\n"' "$1"
+  perl -MURI::Escape -e 'print uri_escape($ARGV[0]), "\n"' "$input"
 }
 
 # URL-decode a string.
 function urldecode {
   emulate -L zsh
 
-  if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
+  if [[ "$1" == "-h" || "$1" == "--help" || $# -eq 0 ]]; then
     _general_usage "urldecode <text>" "Decodes URL-encoded text."
     return 0
   fi
 
+  local input="$*"
+
   if command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import sys, urllib.parse; print(urllib.parse.unquote_plus(sys.argv[1]))' "$1"
+    python3 -c 'import sys, urllib.parse; print(urllib.parse.unquote_plus(sys.argv[1]))' "$input"
     return $?
   fi
 
-  perl -MURI::Escape -e 'print uri_unescape($ARGV[0]), "\n"' "$1"
+  perl -MURI::Escape -e 'print uri_unescape($ARGV[0]), "\n"' "$input"
 }
 
 # Show largest files recursively.
@@ -1384,6 +1388,125 @@ function pwgen {
   return 1
 }
 
+# Verify a file against a hash. Prompts for anything not given as argument.
+# Usage: verify_hash [-a ALGO] [FILE] [HASH|CHECKSUM_FILE]
+# The algorithm (md5, sha1, sha224, sha256, sha384, sha512) is auto-detected from the hash length.
+function verify_hash {
+  emulate -L zsh
+  setopt local_options no_unset
+
+  local algo="" file="" expected="" input=""
+  local c_ok="" c_bad="" c_dim="" c_rst=""
+  if [[ -t 1 ]]; then
+    c_ok=$'\e[32m'; c_bad=$'\e[31m'; c_dim=$'\e[2m'; c_rst=$'\e[0m'
+  fi
+
+  while (( $# > 0 )); do
+    case "$1" in
+      -h|--help)
+        echo "Usage: verify_hash [-a ALGO] [FILE] [HASH|CHECKSUM_FILE]"
+        echo "  Verifies a file against a hash; missing values are asked for interactively."
+        echo "  ALGO: md5 sha1 sha224 sha256 sha384 sha512 (auto-detected by hash length)"
+        echo "  Accepts a plain hash, 'algo:hash', or a checksum file (sha256sum/shasum format)."
+        return 0 ;;
+      -a|--algo) algo="${2:l}"; shift 2 || { echo "verify_hash: -a needs a value"; return 2; } ;;
+      *)
+        if [[ -z "$file" ]]; then file="$1"
+        elif [[ -z "$expected" ]]; then expected="$1"
+        else echo "verify_hash: too many arguments"; return 2; fi
+        shift ;;
+    esac
+  done
+
+  # Ask for the file until it exists
+  while [[ -z "$file" || ! -f "$file" ]]; do
+    if [[ -n "$file" ]]; then
+      echo "${c_bad}Not a file:${c_rst} $file"
+      [[ -t 0 ]] || return 1
+    fi
+    [[ -t 0 ]] || { echo "verify_hash: no file given"; return 2; }
+    vared -p "File to verify (drag & drop works, empty = abort): " -c input
+    [[ -z "$input" ]] && { echo "Aborted."; return 130; }
+    file="${input//\\ / }"                 # unescape drag & drop spaces
+    file="${file#\'}"; file="${file%\'}"   # strip quotes
+    file="${file/#\~/$HOME}"
+    input=""
+  done
+
+  # Ask for the hash
+  if [[ -z "$expected" ]]; then
+    [[ -t 0 ]] || { echo "verify_hash: no hash given"; return 2; }
+    vared -p "Expected hash or checksum file (empty = abort): " -c expected
+    [[ -z "$expected" ]] && { echo "Aborted."; return 130; }
+  fi
+
+  # Expected may be a checksum file: pick the line matching the file name, else the first line
+  if [[ -f "$expected" ]]; then
+    local base="${file:t}" line
+    line=$(grep -F -- "$base" "$expected" 2>/dev/null | head -n 1)
+    [[ -z "$line" ]] && line=$(head -n 1 "$expected")
+    if [[ "$line" == *"= "* ]]; then       # BSD style: SHA256 (file) = hash
+      [[ -z "$algo" ]] && algo="${${${line%% *}:l}//-/}"
+      expected="${line##*= }"
+    else
+      expected="${line%%[[:space:]]*}"
+    fi
+  fi
+
+  # Normalize: "algo:hash" prefix, whitespace, case
+  if [[ "$expected" == *:* ]]; then
+    [[ -z "$algo" ]] && algo="${${expected%%:*}:l}"
+    expected="${expected#*:}"
+  fi
+  expected="${${expected//[[:space:]]/}:l}"
+
+  if [[ ! "$expected" =~ ^[0-9a-f]+$ ]]; then
+    echo "${c_bad}Invalid hash:${c_rst} must contain only hex characters (0-9, a-f)."
+    return 2
+  fi
+
+  if [[ -z "$algo" ]]; then
+    case ${#expected} in
+      32) algo=md5 ;;
+      40) algo=sha1 ;;
+      56) algo=sha224 ;;
+      64) algo=sha256 ;;
+      96) algo=sha384 ;;
+      128) algo=sha512 ;;
+      *) echo "${c_bad}Cannot detect algorithm:${c_rst} hash has ${#expected} characters. Use -a ALGO."; return 2 ;;
+    esac
+  fi
+  algo="${algo//-/}"
+
+  local actual
+  case "$algo" in
+    md5)
+      if command -v md5sum >/dev/null 2>&1; then actual=$(md5sum "$file")
+      else actual=$(md5 -q "$file"); fi ;;
+    sha1|sha224|sha256|sha384|sha512)
+      if command -v "${algo}sum" >/dev/null 2>&1; then actual=$("${algo}sum" "$file")
+      else actual=$(shasum -a "${algo#sha}" "$file"); fi ;;
+    *) echo "verify_hash: unsupported algorithm '$algo'"; return 2 ;;
+  esac
+  actual="${${actual%%[[:space:]]*}:l}"
+
+  if [[ -z "$actual" ]]; then
+    echo "${c_bad}Could not compute hash for${c_rst} $file"
+    return 2
+  fi
+
+  echo "${c_dim}File:     ${c_rst}$file"
+  echo "${c_dim}Algorithm:${c_rst} $algo"
+  echo "${c_dim}Expected: ${c_rst}$expected"
+  echo "${c_dim}Actual:   ${c_rst}$actual"
+  if [[ "$actual" == "$expected" ]]; then
+    echo "${c_ok}✔ MATCH – file is intact.${c_rst}"
+    return 0
+  fi
+  echo "${c_bad}✘ MISMATCH – file differs from the expected hash!${c_rst}"
+  return 1
+}
+
 # Overview of general helper functions.
 function general_help {
   echo "General helper functions:"
@@ -1403,4 +1526,5 @@ function general_help {
   printf "  %-36s %s\n" "weather [LOCATION]" "Show weather forecast"
   printf "  %-36s %s\n" "calc EXPRESSION" "Evaluate expression"
   printf "  %-36s %s\n" "pwgen -i [-e]" "Interactive generator (full or entropy-only mode)"
+  printf "  %-36s %s\n" "verify_hash [-a ALGO] [FILE] [HASH]" "Verify file hash (interactive prompts)"
 }
