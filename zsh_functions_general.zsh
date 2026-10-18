@@ -1508,6 +1508,186 @@ function verify_hash {
 }
 
 # Overview of general helper functions.
+# -------------------------------------------------------------------
+# Show access permissions of a folder (octal, symbolic, owner, group)
+# Usage: show_perms [-p] [FOLDER]   (-p: also list every parent directory)
+# -------------------------------------------------------------------
+# Print the comma-separated members of a group (supplementary + primary group)
+function _show_perms_group_members {
+  emulate -L zsh
+  local grp="$1" gid members line
+  local -a users
+
+  if [[ "$(uname)" == "Darwin" ]]; then
+    users=(${(s: :)$(dscl . -read "/Groups/$grp" GroupMembership 2>/dev/null | sed 's/^GroupMembership: *//')})
+    gid=$(dscl . -read "/Groups/$grp" PrimaryGroupID 2>/dev/null | awk '{print $2}')
+    [[ -n "$gid" ]] && users+=(${(f)"$(dscl . -list /Users PrimaryGroupID 2>/dev/null | awk -v g="$gid" '$2==g{print $1}')"})
+  else
+    line=$(getent group "$grp" 2>/dev/null)
+    members="${line##*:}"
+    users=(${(s:,:)members})
+    gid="${${line#*:*:}%%:*}"
+    [[ -n "$gid" ]] && users+=(${(f)"$(getent passwd 2>/dev/null | awk -F: -v g="$gid" '$4==g{print $1}')"})
+  fi
+  users=(${(ou)users})
+  print -r -- "${(j:, :)users}"
+}
+
+function show_perms {
+  emulate -L zsh
+
+  local parents=0 dir
+  if [[ "$1" == "-p" ]]; then
+    parents=1
+    shift
+  fi
+  dir="${1:-.}"
+
+  if [[ ! -d "$dir" ]]; then
+    echo "show_perms: '$dir' is not a directory." >&2
+    return 1
+  fi
+
+  dir="${dir:A}"
+
+  local -a paths
+  if (( parents )); then
+    local p="$dir"
+    while true; do
+      paths=("$p" "${paths[@]}")
+      [[ "$p" == "/" ]] && break
+      p="${p:h}"
+    done
+  else
+    paths=("$dir")
+  fi
+
+  local item octal symbolic owner group
+  local -a rows entries grows
+  local -a r_oct r_sym r_own r_grp r_path
+  local src line mask has_acl etype ename eperm eff i
+  local w_oct=5 w_sym=8 w_own=5 w_grp=5 n
+
+  # Gather data first so column widths can adapt to the content
+  for item in "${paths[@]}"; do
+    if [[ "$(uname)" == "Darwin" ]]; then
+      octal=$(stat -f '%Lp' "$item")
+      symbolic=$(stat -f '%Sp' "$item")
+      owner=$(stat -f '%Su' "$item")
+      group=$(stat -f '%Sg' "$item")
+    else
+      octal=$(stat -c '%a' "$item")
+      symbolic=$(stat -c '%A' "$item")
+      owner=$(stat -c '%U' "$item")
+      group=$(stat -c '%G' "$item")
+    fi
+
+    # Entries are "type:name:perms"; the mask limits named users and groups
+    entries=()
+    mask="rwx"
+    has_acl=0
+    if [[ "$(uname)" != "Darwin" ]] && command -v getfacl >/dev/null 2>&1; then
+      for line in "${(@f)$(getfacl -p -c "$item" 2>/dev/null)}"; do
+        [[ -z "$line" || "$line" == default:* ]] && continue
+        [[ "$line" == mask::* ]] && mask="${line##*:}"
+        [[ "$line" != (user|group|other)::* && "$line" != mask::* ]] && has_acl=1
+        entries+=("$line")
+      done
+    fi
+    if (( ! ${#entries[@]} )); then
+      entries=("user::${symbolic[2,4]}" "group::${symbolic[5,7]}" "other::${symbolic[8,10]}")
+    fi
+    (( has_acl )) && [[ "$symbolic" != *+ ]] && symbolic+="+"
+
+    r_oct+=("$octal"); r_sym+=("$symbolic"); r_own+=("$owner"); r_grp+=("$group"); r_path+=("$item")
+    (( ${#octal} > w_oct )) && w_oct=${#octal}
+    (( ${#symbolic} > w_sym )) && w_sym=${#symbolic}
+    (( ${#owner} > w_own )) && w_own=${#owner}
+    (( ${#group} > w_grp )) && w_grp=${#group}
+
+    # Build the per-entry rows: type|name|entry|effective
+    local -a erows=() gl=()
+    for line in "${entries[@]}"; do
+      etype="${line%%:*}"
+      [[ "$etype" == mask ]] && continue
+      ename="${${line#*:}%%:*}"
+      eperm="${${line##*:}[1,3]}"
+      eff="$eperm"
+      if [[ "$etype" == group || ( "$etype" == user && -n "$ename" ) ]]; then
+        eff=""
+        for i in 1 2 3; do
+          if [[ "${eperm[i]}" != "-" && "${mask[i]}" != "-" ]]; then
+            eff+="${eperm[i]}"
+          else
+            eff+="-"
+          fi
+        done
+      fi
+      if [[ "$etype" == group ]]; then
+        gl+=("${ename:-$group}|$eff")
+      fi
+      src="ACL"
+      [[ -z "$ename" ]] && src="UNIX"
+      case "$etype:$ename" in
+        user:)  ename="$owner (owner)" ;;
+        group:) ename="$group (owning group)" ;;
+        other:) ename="everyone else" ;;
+      esac
+      erows+=("$etype|$ename|$eperm|$eff|$src")
+    done
+    rows+=("${(F)erows}")
+    grows+=("${(F)gl}")
+  done
+
+  local -a g_names g_effs g_users
+  local gn ge gu w_gn w_ge
+  local w_type=4 w_name=4 w_ent=5 w_eff=9 idx
+  local -a f
+  for line in "${rows[@]}"; do
+    for line in "${(@f)line}"; do
+      f=("${(@s:|:)line}")
+      (( ${#f[1]} > w_type )) && w_type=${#f[1]}
+      (( ${#f[2]} > w_name )) && w_name=${#f[2]}
+      (( ${#f[3]} > w_ent )) && w_ent=${#f[3]}
+      (( ${#f[4]} > w_eff )) && w_eff=${#f[4]}
+    done
+  done
+
+  echo "Folder: basic mode, ownership and path"
+  printf "%-${w_oct}s  %-${w_sym}s  %-${w_own}s  %-${w_grp}s  %s\n" "OCTAL" "SYMBOLIC" "OWNER" "GROUP" "PATH"
+  for idx in {1..${#paths[@]}}; do
+    printf "%-${w_oct}s  %-${w_sym}s  %-${w_own}s  %-${w_grp}s  %s\n" \
+      "${r_oct[idx]}" "${r_sym[idx]}" "${r_own[idx]}" "${r_grp[idx]}" "${r_path[idx]}"
+    echo
+    echo "Access: who gets which rights (UNIX bits or ACL), after the ACL mask"
+    printf "  %-${w_type}s  %-${w_name}s  %-${w_ent}s  %-${w_eff}s  %s\n" "TYPE" "NAME" "ENTRY" "EFFECTIVE" "SOURCE"
+    for line in "${(@f)rows[idx]}"; do
+      f=("${(@s:|:)line}")
+      printf "  %-${w_type}s  %-${w_name}s  %-${w_ent}s  %-${w_eff}s  %s\n" "${f[1]}" "${f[2]}" "${f[3]}" "${f[4]}" "${f[5]}"
+    done
+
+    if [[ -n "${grows[idx]}" ]]; then
+      w_gn=5; w_ge=9
+      g_names=(); g_effs=(); g_users=()
+      for line in "${(@f)grows[idx]}"; do
+        f=("${(@s:|:)line}")
+        gn="${f[1]}"; ge="${f[2]}"
+        gu=$(_show_perms_group_members "$gn")
+        g_names+=("$gn"); g_effs+=("$ge"); g_users+=("${gu:-(none)}")
+        (( ${#gn} > w_gn )) && w_gn=${#gn}
+      done
+      echo
+      echo "Groups: members of the groups involved in the access above"
+      printf "  %-${w_gn}s  %-${w_ge}s  %s\n" "GROUP" "EFFECTIVE" "MEMBERS"
+      for i in {1..${#g_names[@]}}; do
+        printf "  %-${w_gn}s  %-${w_ge}s  %s\n" "${g_names[i]}" "${g_effs[i]}" "${g_users[i]}"
+      done
+    fi
+    if (( idx < ${#paths[@]} )); then echo; fi
+  done
+  return 0
+}
+
 function general_help {
   echo "General helper functions:"
   printf "  %-36s %s\n" "disk_power_on_hours" "Show disk power-on hours"
@@ -1527,4 +1707,5 @@ function general_help {
   printf "  %-36s %s\n" "calc EXPRESSION" "Evaluate expression"
   printf "  %-36s %s\n" "pwgen -i [-e]" "Interactive generator (full or entropy-only mode)"
   printf "  %-36s %s\n" "verify_hash [-a ALGO] [FILE] [HASH]" "Verify file hash (interactive prompts)"
+  printf "  %-36s %s\n" "show_perms [-p] [FOLDER]" "Show permissions, ACLs, effective rights per user/group"
 }
