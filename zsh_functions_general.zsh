@@ -1509,7 +1509,7 @@ function verify_hash {
 
 # Overview of general helper functions.
 # -------------------------------------------------------------------
-# Show access permissions of a folder (octal, symbolic, owner, group)
+# Show access permissions of a folder: UNIX mode, ACL entries, effective rights, group members
 # Usage: show_perms [-p] [FOLDER]   (-p: also list every parent directory)
 # -------------------------------------------------------------------
 # Print the comma-separated members of a group (supplementary + primary group)
@@ -1653,7 +1653,7 @@ function show_perms {
     done
   done
 
-  echo "Folder: basic mode, ownership and path"
+  echo "Folder: UNIX permission bits (chmod), owner, group and path"
   printf "%-${w_oct}s  %-${w_sym}s  %-${w_own}s  %-${w_grp}s  %s\n" "OCTAL" "SYMBOLIC" "OWNER" "GROUP" "PATH"
   for idx in {1..${#paths[@]}}; do
     printf "%-${w_oct}s  %-${w_sym}s  %-${w_own}s  %-${w_grp}s  %s\n" \
