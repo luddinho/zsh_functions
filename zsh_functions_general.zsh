@@ -1510,7 +1510,7 @@ function verify_hash {
 # Overview of general helper functions.
 # -------------------------------------------------------------------
 # Show access permissions of a folder: UNIX mode, ACL entries, effective rights, group members
-# Usage: show_perms [-p] [FOLDER]   (-p: also list every parent directory)
+# Usage: show_perms [-p] [FOLDER...]   (-p: also list every parent directory)
 # -------------------------------------------------------------------
 # Print the comma-separated members of a group (supplementary + primary group)
 function _show_perms_group_members {
@@ -1536,31 +1536,38 @@ function _show_perms_group_members {
 function show_perms {
   emulate -L zsh
 
-  local parents=0 dir
+  local parents=0 dir rc=0 p
   if [[ "$1" == "-p" ]]; then
     parents=1
     shift
   fi
-  dir="${1:-.}"
+  (( $# )) || set -- .
 
-  if [[ ! -d "$dir" ]]; then
-    echo "show_perms: '$dir' is not a directory." >&2
-    return 1
-  fi
-
-  dir="${dir:A}"
-
+  # Invalid arguments are reported and skipped; duplicates are listed once
   local -a paths
-  if (( parents )); then
-    local p="$dir"
-    while true; do
-      paths=("$p" "${paths[@]}")
-      [[ "$p" == "/" ]] && break
-      p="${p:h}"
-    done
-  else
-    paths=("$dir")
-  fi
+  for dir in "$@"; do
+    if [[ ! -d "$dir" ]]; then
+      echo "show_perms: '$dir' is not a directory." >&2
+      rc=1
+      continue
+    fi
+    dir="${dir:A}"
+    if (( parents )); then
+      local -a chain=()
+      p="$dir"
+      while true; do
+        chain=("$p" "${chain[@]}")
+        [[ "$p" == "/" ]] && break
+        p="${p:h}"
+      done
+      for p in "${chain[@]}"; do
+        (( ${paths[(Ie)$p]} )) || paths+=("$p")
+      done
+    else
+      (( ${paths[(Ie)$dir]} )) || paths+=("$dir")
+    fi
+  done
+  (( ${#paths[@]} )) || return 1
 
   local item octal symbolic owner group
   local -a rows entries grows
@@ -1653,9 +1660,20 @@ function show_perms {
     done
   done
 
-  echo "Folder: UNIX permission bits (chmod), owner, group and path"
-  printf "%-${w_oct}s  %-${w_sym}s  %-${w_own}s  %-${w_grp}s  %s\n" "OCTAL" "SYMBOLIC" "OWNER" "GROUP" "PATH"
+  local title
   for idx in {1..${#paths[@]}}; do
+    # With several folders, give each one its own headed section
+    if (( ${#paths[@]} > 1 )); then
+      title="${r_path[idx]}"
+      # Colorize only when writing to a terminal
+      if [[ -t 1 ]]; then
+        printf '\e[1;36m%s\n%s\e[0m\n' "$title" "${(l:${#title}::=:)}"
+      else
+        printf "%s\n%s\n" "$title" "${(l:${#title}::=:)}"
+      fi
+    fi
+    echo "Folder: UNIX permission bits (chmod), owner, group and path"
+    printf "%-${w_oct}s  %-${w_sym}s  %-${w_own}s  %-${w_grp}s  %s\n" "OCTAL" "SYMBOLIC" "OWNER" "GROUP" "PATH"
     printf "%-${w_oct}s  %-${w_sym}s  %-${w_own}s  %-${w_grp}s  %s\n" \
       "${r_oct[idx]}" "${r_sym[idx]}" "${r_own[idx]}" "${r_grp[idx]}" "${r_path[idx]}"
     echo
@@ -1685,7 +1703,7 @@ function show_perms {
     fi
     if (( idx < ${#paths[@]} )); then echo; fi
   done
-  return 0
+  return $rc
 }
 
 function general_help {
@@ -1707,5 +1725,5 @@ function general_help {
   printf "  %-36s %s\n" "calc EXPRESSION" "Evaluate expression"
   printf "  %-36s %s\n" "pwgen -i [-e]" "Interactive generator (full or entropy-only mode)"
   printf "  %-36s %s\n" "verify_hash [-a ALGO] [FILE] [HASH]" "Verify file hash (interactive prompts)"
-  printf "  %-36s %s\n" "show_perms [-p] [FOLDER]" "Show permissions, ACLs, effective rights per user/group"
+  printf "  %-36s %s\n" "show_perms [-p] [FOLDER...]" "Show permissions, ACLs, effective rights per user/group"
 }
